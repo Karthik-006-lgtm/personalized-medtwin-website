@@ -1,0 +1,167 @@
+================================================================================
+HEALTH MONITORING PLATFORM - INSTALLATION STEPS
+================================================================================
+
+STEP 1: PREREQUISITES
+---------------------
+Install the following software:
+
+1. Node.js (v18 or higher)
+   Download: https://nodejs.org/
+   
+2. Python (v3.8 or higher)
+   Download: https://www.python.org/
+   
+3. MongoDB (Community Edition)
+   Download: https://www.mongodb.com/try/download/community
+   
+   OR use MongoDB Atlas (Cloud):
+   https://www.mongodb.com/cloud/atlas
+
+
+STEP 2: VERIFY INSTALLATIONS
+-----------------------------
+Open terminal/command prompt and run:
+
+node --version     (should show v18.x.x or higher)
+npm --version      (should show 9.x.x or higher)
+python --version   (should show 3.8.x or higher)
+mongod --version   (should show MongoDB version)
+
+
+STEP 3: INSTALL PROJECT DEPENDENCIES
+-------------------------------------
+Open terminal in the project folder and run:
+
+npm install
+
+Then:
+cd backend
+npm install
+cd ..
+
+cd frontend
+npm install
+cd ..
+
+cd ml-service
+pip install -r requirements.txt
+cd ..
+
+(On Mac/Linux, use: pip3 install -r requirements.txt)
+
+
+STEP 4: START MONGODB
+----------------------
+In a new terminal window, run:
+
+mongod
+
+(Keep this terminal window open)
+
+
+STEP 5: START THE APPLICATION
+------------------------------
+Choose ONE method:
+
+METHOD A - Automatic (Recommended):
+- Windows: Double-click START.bat
+- Mac/Linux: Run ./START.sh in terminal
+
+METHOD B - Manual (All Services):
+- From project root folder, run: npm run dev
+
+METHOD C - Individual Services:
+Terminal 1: cd backend && npm run dev
+Terminal 2: cd ml-service && python app.py
+Terminal 3: cd frontend && npm run dev
+
+
+STEP 6: ACCESS THE APPLICATION
+-------------------------------
+Open your web browser and go to:
+
+http://localhost:5173
+
+
+STEP 7: CREATE YOUR ACCOUNT
+----------------------------
+1. Click "Sign Up"
+2. Enter email and password (min 6 characters)
+3. Confirm password
+4. Click "Sign Up" button
+
+You're in! Start exploring.
+
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Problem: "Cannot connect to MongoDB"
+Solution: Make sure MongoDB is running (Step 4)
+
+Problem: "Port already in use"
+Solution: Close other applications or change ports in .env files
+
+Problem: "Module not found"
+Solution: Re-run installation commands from Step 3
+
+Problem: Frontend not loading
+Solution: Make sure all 3 services are running (backend, ml-service, frontend)
+
+
+================================================================================
+WHAT'S NEXT?
+================================================================================
+
+1. Complete your profile (click Profile → View Profile)
+2. Enter health data (Dashboard → Manual Entry or Device Sync)
+3. Get predictions (click "Predict & Analyze Health Status")
+4. View AI nutrition recommendations
+5. Upload medical documents
+6. Enable hydration reminders (water droplet icon)
+
+
+================================================================================
+DOCUMENTATION FILES
+================================================================================
+
+README.md              - Project overview
+HOW_TO_RUN.md         - Detailed running instructions
+QUICK_START.md        - Quick start guide
+SETUP_GUIDE.md        - Complete setup guide
+DEPLOYMENT.md         - Production deployment
+PROJECT_COMPLETE.md   - Feature completion summary
+
+
+================================================================================
+SERVICES & PORTS
+================================================================================
+
+Frontend:    http://localhost:5173
+Backend:     http://localhost:5000
+ML Service:  http://localhost:5001
+MongoDB:     localhost:27017
+
+
+================================================================================
+DEFAULT CREDENTIALS
+================================================================================
+
+No default credentials. You create your own account on first use.
+
+
+================================================================================
+NEED HELP?
+================================================================================
+
+1. Check HOW_TO_RUN.md for detailed instructions
+2. Review error messages in terminal
+3. Verify all services are running
+4. Check MongoDB connection
+
+
+================================================================================
+ENJOY YOUR HEALTH MONITORING PLATFORM!
+================================================================================

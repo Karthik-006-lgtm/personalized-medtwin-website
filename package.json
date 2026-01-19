@@ -1,0 +1,23 @@
+{
+  "name": "health-monitoring-platform",
+  "version": "1.0.0",
+  "description": "AI-Powered Health Monitoring System",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend",
+    "ml-service"
+  ],
+  "scripts": {
+    "install-all": "npm install && cd frontend && npm install && cd ../backend && npm install && cd ../ml-service && pip install -r requirements.txt",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:ml": "cd ml-service && python app.py",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:ml\" \"npm run dev:frontend\"",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && npm start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
