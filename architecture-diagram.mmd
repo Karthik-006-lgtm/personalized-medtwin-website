@@ -1,0 +1,99 @@
+flowchart TB
+  %% ===== Styles =====
+  classDef user fill:#E3F2FD,stroke:#1565C0,color:#0D47A1,stroke-width:1.5px;
+  classDef frontend fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20,stroke-width:1.5px;
+  classDef backend fill:#FFF3E0,stroke:#EF6C00,color:#E65100,stroke-width:1.5px;
+  classDef ml fill:#F3E5F5,stroke:#6A1B9A,color:#4A148C,stroke-width:1.5px;
+  classDef db fill:#FCE4EC,stroke:#AD1457,color:#880E4F,stroke-width:1.5px;
+  classDef storage fill:#E0F7FA,stroke:#00838F,color:#006064,stroke-width:1.5px;
+  classDef service fill:#F1F8E9,stroke:#558B2F,color:#33691E,stroke-width:1.5px;
+
+  %% ===== User & Client =====
+  U([User / Browser]):::user
+
+  subgraph FE["Frontend (React + Vite + Tailwind)"]
+    FE1[Login / Signup UI]:::frontend
+    FE2[Dashboard UI]:::frontend
+    FE3[Manual Entry Form]:::frontend
+    FE4[Device Sync UI + OTP]:::frontend
+    FE5[Health Analytics UI]:::frontend
+    FE6[Nutrition Recommendations UI]:::frontend
+    FE7[Profile UI + Avatar]:::frontend
+    FE8[Medical Docs Vault UI]:::frontend
+    FE9[Hydration Reminder Toggle]:::frontend
+    FE10[Auth Context + JWT Storage]:::frontend
+  end
+
+  %% ===== Backend =====
+  subgraph BE["Backend API (Node.js + Express)"]
+    B1[Auth Routes /api/auth]:::backend
+    B2[User/Profile Routes /api/user]:::backend
+    B3[Health Routes /api/health]:::backend
+    B4[Prediction Routes /api/predictions]:::backend
+    B5[Documents Routes /api/documents]:::backend
+    B6[Devices Routes /api/devices]:::backend
+    B7[JWT Middleware]:::backend
+  end
+
+  %% ===== ML Service =====
+  subgraph ML["AI/ML Service (Python Flask)"]
+    M1[Health Prediction Engine]:::ml
+    M2[Nutrition Recommendation Engine]:::ml
+  end
+
+  %% ===== Data Layer =====
+  DB[(MongoDB)]:::db
+
+  %% ===== File Storage =====
+  FS1[(Avatar Storage /uploads/avatars)]:::storage
+  FS2[(Medical Docs Storage /uploads/documents)]:::storage
+
+  %% ===== Connections =====
+  U -->|HTTPS| FE1
+  U --> FE2
+  U --> FE7
+  U --> FE8
+
+  FE10 -->|JWT Bearer| B7
+  FE1 -->|/api/auth login/signup| B1
+  FE7 -->|/api/user profile + avatar| B2
+  FE3 -->|/api/health data| B3
+  FE5 -->|/api/health stats| B3
+  FE4 -->|/api/devices sync| B6
+  FE8 -->|/api/documents upload/list/delete| B5
+  FE6 -->|/api/predictions nutrition| B4
+  FE2 -->|/api/predictions predict| B4
+
+  B1 --> DB
+  B2 --> DB
+  B3 --> DB
+  B4 --> DB
+  B5 --> DB
+  B6 --> DB
+
+  B2 --> FS1
+  B5 --> FS2
+
+  B4 -->|HTTP /api/predict| M1
+  B4 -->|HTTP /api/nutrition| M2
+
+  %% ===== Feature Highlights =====
+  subgraph FEATURES["Core Functionalities"]
+    F1[Authentication + JWT Sessions]:::service
+    F2[Manual Health Metrics Entry]:::service
+    F3[Device Sync + OTP Pairing Demo]:::service
+    F4[AI Health Risk Prediction]:::service
+    F5[AI Nutrition Plans 7-day]:::service
+    F6[User Profile + Progress Tracking]:::service
+    F7[Medical Document Vault]:::service
+    F8[Hydration Reminders]:::service
+  end
+
+  FE1 --> F1
+  FE3 --> F2
+  FE4 --> F3
+  FE2 --> F4
+  FE6 --> F5
+  FE7 --> F6
+  FE8 --> F7
+  FE9 --> F8
