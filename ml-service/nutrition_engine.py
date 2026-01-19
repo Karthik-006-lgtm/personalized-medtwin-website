@@ -1,4 +1,5 @@
 from typing import Dict, List
+from datetime import datetime
 
 class NutritionRecommender:
     """
@@ -66,22 +67,40 @@ class NutritionRecommender:
         diet_type = data.get('dietType', 'Non-Vegetarian')
         health_conditions = data.get('healthConditions', [])
         
-        # Calculate daily caloric needs
-        daily_calories = self._calculate_caloric_needs(gender, age, weight, height, occupation)
+        age_group = self._get_age_group(age)
+        
+        # Calculate daily caloric needs (strictly age-based)
+        daily_calories = self._calculate_caloric_needs(age)
         
         # Generate meal plans for 7 days
         meal_plans = self._generate_weekly_meal_plan(
-            occupation, gender, daily_calories, diet_type, health_conditions, stress_level
+            occupation,
+            gender,
+            age_group,
+            daily_calories,
+            diet_type,
+            health_conditions,
+            stress_level,
+            heart_rate
         )
         
         # Generate healthy snack recommendations
         snacks = self._generate_snack_recommendations(
-            occupation, stress_level, diet_type, health_conditions
+            occupation,
+            gender,
+            age_group,
+            stress_level,
+            diet_type,
+            health_conditions
         )
         
         # Generate healthy drink alternatives
         drinks = self._generate_drink_recommendations(
-            occupation, stress_level, health_conditions
+            occupation,
+            gender,
+            age_group,
+            stress_level,
+            health_conditions
         )
         
         # Hydration reminders
@@ -99,45 +118,57 @@ class NutritionRecommender:
             'occupationAdvice': occupation_advice
         }
     
-    def _calculate_caloric_needs(self, gender: str, age: int, weight: float, 
-                                   height: float, occupation: str) -> int:
-        """Calculate daily caloric needs using Harris-Benedict equation"""
-        
-        # Base Metabolic Rate (BMR)
-        if gender == 'Male':
-            bmr = 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * age)
-        else:  # Female or Other
-            bmr = 447.593 + (9.247 * weight) + (3.098 * height) - (4.330 * age)
-        
-        # Apply occupation activity multiplier
-        profile = self.occupation_profiles.get(occupation, {'calorie_multiplier': 1.5})
-        daily_calories = int(bmr * profile['calorie_multiplier'])
-        
-        return daily_calories
+    def _get_age_group(self, age: int) -> str:
+        if age <= 12:
+            return 'child'
+        if age <= 19:
+            return 'teen'
+        if age >= 60:
+            return 'elderly'
+        return 'adult'
+
+    def _calculate_caloric_needs(self, age: int) -> int:
+        """Strict age-based daily calorie target."""
+        age_group = self._get_age_group(age)
+        if age_group == 'teen':
+            return 2400
+        if age_group == 'child':
+            return 1800
+        if age_group == 'elderly':
+            return 1700
+        return 2000
     
-    def _generate_weekly_meal_plan(self, occupation: str, gender: str, calories: int,
+    def _generate_weekly_meal_plan(self, occupation: str, gender: str, age_group: str, calories: int,
                                      diet_type: str, health_conditions: List, 
-                                     stress_level: int) -> List[Dict]:
-        """Generate personalized 7-day meal plan"""
+                                     stress_level: int, heart_rate: int) -> List[Dict]:
+        """Generate personalized 7-day meal plan (dynamic by week)."""
         
         is_veg = diet_type in ['Vegetarian', 'Vegan']
         has_diabetes = 'Diabetes' in health_conditions
         has_hypertension = 'Hypertension' in health_conditions
+        week_offset = self._get_week_offset()
+        preference_tags = self._build_preference_tags(
+            age_group, gender, occupation, stress_level, health_conditions, heart_rate
+        )
         
         # Distribute calories across meals
         breakfast_cal = int(calories * 0.25)
         lunch_cal = int(calories * 0.35)
         dinner_cal = int(calories * 0.30)
-        snack_cal = int(calories * 0.10)
         
         days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         meal_plans = []
         
         for i, day in enumerate(days):
-            # Rotate through different meal options
-            breakfast = self._get_breakfast_option(i, is_veg, breakfast_cal, has_diabetes)
-            lunch = self._get_lunch_option(i, is_veg, lunch_cal, has_diabetes, has_hypertension)
-            dinner = self._get_dinner_option(i, is_veg, dinner_cal, has_diabetes, has_hypertension)
+            breakfast = self._get_breakfast_option(
+                i, week_offset, preference_tags, is_veg, breakfast_cal, has_diabetes
+            )
+            lunch = self._get_lunch_option(
+                i, week_offset, preference_tags, is_veg, lunch_cal, has_diabetes, has_hypertension
+            )
+            dinner = self._get_dinner_option(
+                i, week_offset, preference_tags, is_veg, dinner_cal, has_diabetes, has_hypertension
+            )
             
             meal_plans.append({
                 'day': day,
@@ -148,9 +179,87 @@ class NutritionRecommender:
             })
         
         return meal_plans
+
+    def _get_week_offset(self) -> int:
+        return datetime.now().isocalendar()[1]
+
+    def _build_preference_tags(self, age_group: str, gender: str, occupation: str,
+                               stress_level: int, health_conditions: List, heart_rate: int) -> List[str]:
+        tags = ['easy', 'budget', 'quick']
+        profile = self.occupation_profiles.get(occupation, {})
+        activity = profile.get('activity_level', 'moderate')
+        
+        if age_group == 'child':
+            tags.append('kid_friendly')
+        elif age_group == 'teen':
+            tags.append('high_energy')
+        elif age_group == 'elderly':
+            tags.append('light')
+        else:
+            tags.append('balanced')
+        
+        if activity in ['active', 'very active']:
+            tags.append('high_energy')
+        elif activity in ['sedentary']:
+            tags.append('light')
+        
+        if stress_level > 6:
+            tags.append('calming')
+        if heart_rate > 95:
+            tags.append('heart_healthy')
+        if 'Diabetes' in health_conditions:
+            tags.append('low_sugar')
+        if 'Hypertension' in health_conditions:
+            tags.append('low_sodium')
+        
+        return tags
+
+    def _select_option(self, options: List[Dict], day_index: int, week_offset: int, preferred_tags: List[str]) -> Dict:
+        def score(option: Dict) -> int:
+            return len(set(option.get('tags', [])) & set(preferred_tags))
+        
+        scored = sorted(options, key=score, reverse=True)
+        if not scored:
+            return options[day_index % len(options)]
+        idx = (day_index + week_offset) % len(scored)
+        return scored[idx]
+
+    def _select_top_items(self, options: List[Dict], preferred_tags: List[str], limit: int) -> List[Dict]:
+        def score(option: Dict) -> int:
+            return len(set(option.get('tags', [])) & set(preferred_tags))
+        scored = sorted(options, key=score, reverse=True)
+        return scored[:limit] if len(scored) > limit else scored
+
+    def _infer_tags(self, name: str) -> List[str]:
+        lowered = name.lower()
+        tags = []
+        if 'oat' in lowered or 'whole grain' in lowered or 'quinoa' in lowered:
+            tags.append('low_sugar')
+        if 'salad' in lowered or 'vegetable' in lowered or 'greens' in lowered:
+            tags.append('heart_healthy')
+        if 'soup' in lowered or 'khichdi' in lowered:
+            tags.append('light')
+        if 'smoothie' in lowered or 'pancake' in lowered:
+            tags.append('high_energy')
+        if 'yogurt' in lowered or 'milk' in lowered:
+            tags.append('calming')
+        return tags
+
+    def _apply_meal_defaults(self, option: Dict, meal_type: str) -> Dict:
+        defaults = {
+            'breakfast': '7:00–9:00 AM',
+            'lunch': '12:30–2:00 PM',
+            'dinner': '7:00–8:30 PM'
+        }
+        option.setdefault('bestTime', defaults.get(meal_type, 'Anytime'))
+        base_tags = set(option.get('tags', []))
+        base_tags.update(['easy', 'budget', 'quick'])
+        base_tags.update(self._infer_tags(option.get('name', '')))
+        option['tags'] = list(base_tags)
+        return option
     
-    def _get_breakfast_option(self, day: int, is_veg: bool, target_cal: int, 
-                                has_diabetes: bool) -> Dict:
+    def _get_breakfast_option(self, day_index: int, week_offset: int, preference_tags: List[str],
+                                is_veg: bool, target_cal: int, has_diabetes: bool) -> Dict:
         """Get breakfast option for the day"""
         
         veg_options = [
@@ -216,15 +325,11 @@ class NutritionRecommender:
         ]
         
         options = veg_options if is_veg else non_veg_options
-        
-        if has_diabetes:
-            # Prefer lower glycemic options
-            return options[day % len([o for o in options if 'low glycemic' in o.get('benefits', '').lower() or day % 2 == 0])]
-        
-        return options[day % len(options)]
+        options = [self._apply_meal_defaults(option, 'breakfast') for option in options]
+        return self._select_option(options, day_index, week_offset, preference_tags)
     
-    def _get_lunch_option(self, day: int, is_veg: bool, target_cal: int,
-                           has_diabetes: bool, has_hypertension: bool) -> Dict:
+    def _get_lunch_option(self, day_index: int, week_offset: int, preference_tags: List[str],
+                           is_veg: bool, target_cal: int, has_diabetes: bool, has_hypertension: bool) -> Dict:
         """Get lunch option for the day"""
         
         veg_options = [
@@ -297,17 +402,14 @@ class NutritionRecommender:
         ]
         
         options = veg_options if is_veg else non_veg_options
-        
+        options = [self._apply_meal_defaults(option, 'lunch') for option in options]
+        selected = self._select_option(options, day_index, week_offset, preference_tags)
         if has_hypertension:
-            # Ensure low sodium options are prioritized
-            selected = options[day % len(options)]
             selected['note'] = 'Prepared with minimal salt, herbs for flavor'
-            return selected
-        
-        return options[day % len(options)]
+        return selected
     
-    def _get_dinner_option(self, day: int, is_veg: bool, target_cal: int,
-                            has_diabetes: bool, has_hypertension: bool) -> Dict:
+    def _get_dinner_option(self, day_index: int, week_offset: int, preference_tags: List[str],
+                            is_veg: bool, target_cal: int, has_diabetes: bool, has_hypertension: bool) -> Dict:
         """Get dinner option for the day"""
         
         veg_options = [
@@ -380,14 +482,15 @@ class NutritionRecommender:
         ]
         
         options = veg_options if is_veg else non_veg_options
-        return options[day % len(options)]
+        options = [self._apply_meal_defaults(option, 'dinner') for option in options]
+        return self._select_option(options, day_index, week_offset, preference_tags)
     
-    def _generate_snack_recommendations(self, occupation: str, stress_level: int,
-                                         diet_type: str, health_conditions: List) -> List[Dict]:
+    def _generate_snack_recommendations(self, occupation: str, gender: str, age_group: str,
+                                         stress_level: int, diet_type: str, health_conditions: List) -> List[Dict]:
         """Generate healthy snack recommendations"""
         
         is_veg = diet_type in ['Vegetarian', 'Vegan']
-        has_diabetes = 'Diabetes' in health_conditions
+        preferred_tags = self._build_preference_tags(age_group, gender, occupation, stress_level, health_conditions, 70)
         
         snacks = [
             {
@@ -395,134 +498,173 @@ class NutritionRecommender:
                 'calories': 180,
                 'description': 'Almonds, walnuts, pumpkin seeds (30g)',
                 'benefits': 'Healthy fats, protein, brain health',
-                'bestTime': 'Mid-morning or afternoon'
+                'bestTime': 'Mid-morning',
+                'bestTimeCategory': 'Best for Morning',
+                'tags': ['balanced', 'high_energy']
             },
             {
                 'name': 'Greek Yogurt with Berries',
                 'calories': 150,
                 'description': 'Plain Greek yogurt (150g), fresh berries (50g)',
                 'benefits': 'Protein, probiotics, antioxidants',
-                'bestTime': 'Afternoon'
+                'bestTime': 'Afternoon',
+                'bestTimeCategory': 'Best for Afternoon',
+                'tags': ['calming', 'low_sugar']
             },
             {
                 'name': 'Apple Slices with Almond Butter',
                 'calories': 170,
                 'description': 'Apple (1 medium), almond butter (1 tbsp)',
                 'benefits': 'Fiber, healthy fats, satisfying',
-                'bestTime': 'Morning or afternoon'
+                'bestTime': 'Morning',
+                'bestTimeCategory': 'Best for Morning',
+                'tags': ['balanced', 'low_sugar']
             },
             {
                 'name': 'Roasted Chickpeas',
                 'calories': 140,
                 'description': 'Roasted chickpeas (50g), spiced',
                 'benefits': 'Protein, fiber, crunchy',
-                'bestTime': 'Evening'
+                'bestTime': 'Evening',
+                'bestTimeCategory': 'Best for Evening',
+                'tags': ['high_energy']
             },
             {
                 'name': 'Dark Chocolate & Almonds',
                 'calories': 160,
                 'description': 'Dark chocolate (20g, 70%+), almonds (15g)',
                 'benefits': 'Antioxidants, mood booster, heart-healthy',
-                'bestTime': 'Post-lunch or evening'
+                'bestTime': 'Post-lunch',
+                'bestTimeCategory': 'Best for Afternoon',
+                'tags': ['calming', 'heart_healthy']
             },
             {
                 'name': 'Vegetable Sticks with Hummus',
                 'calories': 120,
                 'description': 'Carrot, cucumber, bell pepper with hummus (50g)',
                 'benefits': 'Low calorie, vitamins, filling',
-                'bestTime': 'Anytime'
+                'bestTime': 'Anytime',
+                'bestTimeCategory': 'Best for Afternoon',
+                'tags': ['light', 'heart_healthy']
             },
             {
                 'name': 'Boiled Eggs',
                 'calories': 140,
                 'description': '2 boiled eggs with a pinch of salt & pepper',
                 'benefits': 'High protein, portable, filling',
-                'bestTime': 'Morning or post-workout'
+                'bestTime': 'Morning',
+                'bestTimeCategory': 'Best for Morning',
+                'tags': ['high_energy']
             },
             {
                 'name': 'Protein Energy Balls',
                 'calories': 150,
                 'description': 'Dates, oats, peanut butter, chia seeds (2 balls)',
                 'benefits': 'Natural energy, no added sugar',
-                'bestTime': 'Pre or post-workout'
+                'bestTime': 'Pre-workout',
+                'bestTimeCategory': 'Best for Afternoon',
+                'tags': ['high_energy', 'low_sugar']
             }
         ]
         
         # Filter based on diet
         if is_veg or 'Vegan' in diet_type:
             snacks = [s for s in snacks if 'egg' not in s['name'].lower()]
-        
-        return snacks
+        return self._select_top_items(snacks, preferred_tags, limit=6)
     
-    def _generate_drink_recommendations(self, occupation: str, stress_level: int,
-                                         health_conditions: List) -> List[Dict]:
+    def _generate_drink_recommendations(self, occupation: str, gender: str, age_group: str,
+                                         stress_level: int, health_conditions: List) -> List[Dict]:
         """Generate healthy drink recommendations"""
         
+        preferred_tags = self._build_preference_tags(age_group, gender, occupation, stress_level, health_conditions, 70)
         drinks = [
             {
                 'name': 'Green Tea',
                 'calories': 2,
                 'description': 'Freshly brewed green tea with lemon',
                 'benefits': 'Antioxidants, metabolism boost, calm focus',
-                'servings': '2-3 cups daily'
+                'servings': '2-3 cups daily',
+                'bestTime': 'Morning',
+                'bestTimeCategory': 'Best for Morning',
+                'tags': ['calming', 'heart_healthy']
             },
             {
                 'name': 'Coconut Water',
                 'calories': 45,
                 'description': 'Fresh coconut water',
                 'benefits': 'Natural electrolytes, hydration, minerals',
-                'servings': '1-2 glasses daily'
+                'servings': '1-2 glasses daily',
+                'bestTime': 'Afternoon',
+                'bestTimeCategory': 'Best for Afternoon',
+                'tags': ['high_energy']
             },
             {
                 'name': 'Fresh Fruit Smoothie',
                 'calories': 180,
                 'description': 'Banana, berries, spinach, almond milk',
                 'benefits': 'Vitamins, fiber, natural sweetness',
-                'servings': '1 glass daily'
+                'servings': '1 glass daily',
+                'bestTime': 'Morning',
+                'bestTimeCategory': 'Best for Morning',
+                'tags': ['high_energy']
             },
             {
                 'name': 'Herbal Tea (Chamomile/Peppermint)',
                 'calories': 0,
                 'description': 'Caffeine-free herbal tea',
                 'benefits': 'Relaxation, digestion, stress relief',
-                'servings': '1-2 cups daily, especially evening'
+                'servings': '1-2 cups daily, especially evening',
+                'bestTime': 'Night',
+                'bestTimeCategory': 'Best for Night',
+                'tags': ['calming', 'light']
             },
             {
                 'name': 'Fresh Lime Water',
                 'calories': 20,
                 'description': 'Water with fresh lime juice, mint',
                 'benefits': 'Vitamin C, refreshing, alkalizing',
-                'servings': '2-3 glasses daily'
+                'servings': '2-3 glasses daily',
+                'bestTime': 'Anytime',
+                'bestTimeCategory': 'Best for Afternoon',
+                'tags': ['heart_healthy']
             },
             {
                 'name': 'Buttermilk (Chaas)',
                 'calories': 60,
                 'description': 'Low-fat buttermilk with cumin, coriander',
                 'benefits': 'Probiotics, cooling, digestion',
-                'servings': '1 glass daily'
+                'servings': '1 glass daily',
+                'bestTime': 'Afternoon',
+                'bestTimeCategory': 'Best for Afternoon',
+                'tags': ['calming', 'light']
             },
             {
                 'name': 'Beetroot Juice',
                 'calories': 70,
                 'description': 'Fresh beetroot juice with carrot',
                 'benefits': 'Iron, blood health, endurance',
-                'servings': '1 small glass daily'
+                'servings': '1 small glass daily',
+                'bestTime': 'Morning',
+                'bestTimeCategory': 'Best for Morning',
+                'tags': ['high_energy', 'heart_healthy']
             },
             {
                 'name': 'Golden Milk (Turmeric Latte)',
                 'calories': 120,
                 'description': 'Warm milk with turmeric, honey, black pepper',
                 'benefits': 'Anti-inflammatory, immunity, sleep quality',
-                'servings': '1 cup before bed'
+                'servings': '1 cup before bed',
+                'bestTime': 'Night',
+                'bestTimeCategory': 'Best for Night',
+                'tags': ['calming', 'light']
             }
         ]
         
         if stress_level > 6:
-            # Emphasize stress-relief drinks
             drinks[0]['recommendation'] = 'Highly recommended for stress management'
             drinks[3]['recommendation'] = 'Perfect for evening relaxation'
         
-        return drinks
+        return self._select_top_items(drinks, preferred_tags, limit=6)
     
     def _generate_hydration_plan(self, occupation: str, weight: float) -> Dict:
         """Generate personalized hydration plan"""
@@ -614,6 +756,31 @@ class NutritionRecommender:
                 'Calorie-dense meals to match energy expenditure',
                 'Focus on injury prevention through nutrition',
                 'Electrolyte balance is crucial'
+            ]
+        elif occupation == 'Student':
+            advice['recommendations'] = [
+                'Maintain regular meal timings to sustain energy',
+                'Choose quick, budget-friendly meals with protein',
+                'Stay hydrated during long study hours',
+                'Limit sugary snacks to avoid energy crashes',
+                'Take short movement breaks every hour'
+            ]
+        elif occupation in ['Manager', 'Accountant', 'Sales Professional']:
+            advice['recommendations'] = [
+                'Schedule meals during busy work hours to avoid skipping',
+                'Choose light, low-oil meals for afternoon productivity',
+                'Stay hydrated to reduce fatigue',
+                'Include fiber-rich foods to maintain energy levels',
+                'Manage stress with brief walks or stretching'
+            ]
+
+        if not advice['recommendations']:
+            advice['recommendations'] = [
+                'Prioritize regular meals and balanced nutrition',
+                'Drink water consistently throughout the day',
+                'Include vegetables and lean protein in each meal',
+                'Limit high-sugar snacks to avoid energy dips',
+                'Take short breaks to reduce stress'
             ]
         
         # Gender-specific advice

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -24,7 +25,10 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const Profile = () => {
   const { user, updateUser } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [profileData, setProfileData] = useState({
     name: '',
     age: '',
@@ -35,7 +39,7 @@ const Profile = () => {
     bloodType: '',
     currentChronicConditions: [],
     pastChronicConditions: [],
-    allergies: '',
+    allergies: [],
     exerciseFrequency: '',
     alcoholConsumption: '',
     averageSleepHours: '',
@@ -69,7 +73,7 @@ const Profile = () => {
         bloodType: user.profile.bloodType || '',
         currentChronicConditions: user.profile.currentChronicConditions || [],
         pastChronicConditions: user.profile.pastChronicConditions || [],
-        allergies: user.profile.allergies || '',
+        allergies: user.profile.allergies || [],
         exerciseFrequency: user.profile.exerciseFrequency || '',
         alcoholConsumption: user.profile.alcoholConsumption || '',
         averageSleepHours: user.profile.averageSleepHours || '',
@@ -80,6 +84,30 @@ const Profile = () => {
     }
     fetchProgressData();
   }, [user]);
+
+  useEffect(() => {
+    const isEditMode = searchParams.get('mode') === 'edit';
+    const hasProfileData = !!(
+      user?.profile?.name ||
+      user?.profile?.age ||
+      user?.profile?.gender ||
+      user?.profile?.occupation ||
+      user?.profile?.height ||
+      user?.profile?.weight ||
+      user?.profile?.bloodType ||
+      (user?.profile?.currentChronicConditions || []).length ||
+      (user?.profile?.pastChronicConditions || []).length ||
+      (user?.profile?.allergies || []).length ||
+      user?.profile?.exerciseFrequency ||
+      user?.profile?.alcoholConsumption ||
+      user?.profile?.averageSleepHours ||
+      user?.profile?.sleepIssues ||
+      user?.profile?.dietType ||
+      user?.profile?.mealsPerDay
+    );
+
+    setIsEditing(isEditMode || !hasProfileData);
+  }, [searchParams, user]);
 
   const fetchProgressData = async () => {
     try {
@@ -140,6 +168,10 @@ const Profile = () => {
 
       updateUser(response.data.user);
       toast.success('Profile updated successfully!');
+      setIsEditing(false);
+      if (searchParams.get('mode') === 'edit') {
+        navigate('/profile', { replace: true });
+      }
     } catch (error) {
       toast.error('Failed to update profile');
       console.error(error);
@@ -192,6 +224,10 @@ const Profile = () => {
   const chronicConditions = [
     'None', 'Diabetes', 'Hypertension', 'Heart Disease', 'Asthma', 
     'Arthritis', 'Thyroid Disorder', 'Other'
+  ];
+  const allergyOptions = [
+    'None', 'Pollen', 'Dust', 'Peanuts', 'Dairy', 'Eggs', 'Seafood',
+    'Gluten', 'Soy', 'Pet Dander', 'Latex', 'Other'
   ];
 
   return (
@@ -267,14 +303,15 @@ const Profile = () => {
           <div>
             <h3 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Basic Information</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <InputField label="Name" name="name" value={profileData.name} onChange={handleChange} />
-              <InputField label="Age" name="age" type="number" value={profileData.age} onChange={handleChange} />
+              <InputField label="Name" name="name" value={profileData.name} onChange={handleChange} readOnly={!isEditing} />
+              <InputField label="Age" name="age" type="number" value={profileData.age} onChange={handleChange} readOnly={!isEditing} />
               
               <SelectField 
                 label="Gender" 
                 name="gender" 
                 value={profileData.gender} 
                 onChange={handleChange}
+                disabled={!isEditing}
                 options={['', 'Male', 'Female', 'Other']}
               />
               
@@ -283,6 +320,7 @@ const Profile = () => {
                 name="occupation" 
                 value={profileData.occupation} 
                 onChange={handleChange}
+                disabled={!isEditing}
                 options={occupationOptions}
               />
             </div>
@@ -292,18 +330,25 @@ const Profile = () => {
           <div>
             <h3 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Health Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <InputField label="Height (cm)" name="height" type="number" value={profileData.height} onChange={handleChange} />
-              <InputField label="Weight (kg)" name="weight" type="number" value={profileData.weight} onChange={handleChange} step="0.1" />
+              <InputField label="Height (cm)" name="height" type="number" value={profileData.height} onChange={handleChange} readOnly={!isEditing} />
+              <InputField label="Weight (kg)" name="weight" type="number" value={profileData.weight} onChange={handleChange} step="0.1" readOnly={!isEditing} />
               
               <SelectField 
                 label="Blood Type" 
                 name="bloodType" 
                 value={profileData.bloodType} 
                 onChange={handleChange}
+                disabled={!isEditing}
                 options={['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']}
               />
               
-              <InputField label="Allergies" name="allergies" value={profileData.allergies} onChange={handleChange} />
+              <MultiSelectField
+                label="Allergies"
+                options={allergyOptions}
+                selected={profileData.allergies}
+                onToggle={(value) => handleMultiSelect('allergies', value)}
+                disabled={!isEditing}
+              />
             </div>
 
             {/* Multi-select for conditions */}
@@ -313,6 +358,7 @@ const Profile = () => {
                 options={chronicConditions}
                 selected={profileData.currentChronicConditions}
                 onToggle={(value) => handleMultiSelect('currentChronicConditions', value)}
+                disabled={!isEditing}
               />
               
               <MultiSelectField
@@ -320,6 +366,7 @@ const Profile = () => {
                 options={chronicConditions}
                 selected={profileData.pastChronicConditions}
                 onToggle={(value) => handleMultiSelect('pastChronicConditions', value)}
+                disabled={!isEditing}
               />
             </div>
           </div>
@@ -333,6 +380,7 @@ const Profile = () => {
                 name="exerciseFrequency" 
                 value={profileData.exerciseFrequency} 
                 onChange={handleChange}
+                disabled={!isEditing}
                 options={['', 'Daily', '3-5 times/week', '1-2 times/week', 'Rarely', 'Never']}
               />
               
@@ -341,6 +389,7 @@ const Profile = () => {
                 name="alcoholConsumption" 
                 value={profileData.alcoholConsumption} 
                 onChange={handleChange}
+                disabled={!isEditing}
                 options={['', 'Never', 'Occasionally', 'Weekly', 'Daily']}
               />
             </div>
@@ -357,6 +406,7 @@ const Profile = () => {
                 value={profileData.averageSleepHours} 
                 onChange={handleChange} 
                 step="0.5"
+                readOnly={!isEditing}
               />
               
               <SelectField 
@@ -364,6 +414,7 @@ const Profile = () => {
                 name="sleepIssues" 
                 value={profileData.sleepIssues} 
                 onChange={handleChange}
+                disabled={!isEditing}
                 options={['', 'None', 'Insomnia', 'Sleep Apnea', 'Restless Sleep', 'Other']}
               />
             </div>
@@ -378,6 +429,7 @@ const Profile = () => {
                 name="dietType" 
                 value={profileData.dietType} 
                 onChange={handleChange}
+                disabled={!isEditing}
                 options={['', 'Vegetarian', 'Vegan', 'Non-Vegetarian', 'Pescatarian', 'Other']}
               />
               
@@ -387,30 +439,33 @@ const Profile = () => {
                 type="number" 
                 value={profileData.mealsPerDay} 
                 onChange={handleChange}
+                readOnly={!isEditing}
               />
             </div>
           </div>
 
           {/* Submit Button */}
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex items-center gap-2 px-8 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save size={20} />
-                  Save Profile
-                </>
-              )}
-            </button>
-          </div>
+          {isEditing && (
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex items-center gap-2 px-8 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save size={20} />
+                    Save Profile
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </form>
       </div>
 
@@ -472,21 +527,23 @@ const Profile = () => {
   );
 };
 
-const InputField = ({ label, ...props }) => (
+const InputField = ({ label, readOnly = false, ...props }) => (
   <div>
     <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
     <input
       {...props}
+      readOnly={readOnly}
       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
     />
   </div>
 );
 
-const SelectField = ({ label, options, ...props }) => (
+const SelectField = ({ label, options, disabled = false, ...props }) => (
   <div>
     <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
     <select
       {...props}
+      disabled={disabled}
       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
     >
       {options.map(option => (
@@ -496,17 +553,18 @@ const SelectField = ({ label, options, ...props }) => (
   </div>
 );
 
-const MultiSelectField = ({ label, options, selected, onToggle }) => (
+const MultiSelectField = ({ label, options, selected, onToggle, disabled = false }) => (
   <div>
     <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
     <div className="border border-gray-300 rounded-lg p-3 max-h-40 overflow-y-auto">
       <div className="space-y-2">
         {options.map(option => (
-          <label key={option} className="flex items-center gap-2 cursor-pointer">
+          <label key={option} className={`flex items-center gap-2 ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
             <input
               type="checkbox"
               checked={selected.includes(option)}
               onChange={() => onToggle(option)}
+              disabled={disabled}
               className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
             <span className="text-sm text-gray-700">{option}</span>

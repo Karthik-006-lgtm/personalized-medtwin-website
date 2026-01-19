@@ -204,7 +204,10 @@ const NutritionRecommendations = ({ onClose }) => {
                   </div>
                   <p className="text-sm text-gray-600 mb-2">{snack.description}</p>
                   <p className="text-xs text-green-700 font-medium">✓ {snack.benefits}</p>
-                  <p className="text-xs text-gray-500 mt-1">Best time: {snack.bestTime}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {snack.bestTimeCategory ? `${snack.bestTimeCategory} • ` : 'Best time: '}
+                    {snack.bestTime}
+                  </p>
                 </div>
               ))}
             </div>
@@ -225,6 +228,10 @@ const NutritionRecommendations = ({ onClose }) => {
                   </div>
                   <p className="text-sm text-gray-600 mb-2">{drink.description}</p>
                   <p className="text-xs text-blue-700 font-medium">✓ {drink.benefits}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {drink.bestTimeCategory ? `${drink.bestTimeCategory} • ` : 'Best time: '}
+                    {drink.bestTime || drink.servings}
+                  </p>
                   <p className="text-xs text-gray-500 mt-1">Servings: {drink.servings}</p>
                 </div>
               ))}
@@ -332,6 +339,9 @@ const MealCard = ({ title, icon, meal }) => (
     </div>
     
     <p className="text-xs text-green-700 font-medium">✓ {meal.benefits}</p>
+    {meal.bestTime && (
+      <p className="text-xs text-gray-500 mt-1">Best time: {meal.bestTime}</p>
+    )}
     {meal.note && <p className="text-xs text-amber-700 mt-1">⚠️ {meal.note}</p>}
   </div>
 );

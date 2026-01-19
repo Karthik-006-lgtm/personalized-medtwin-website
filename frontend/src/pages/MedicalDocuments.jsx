@@ -28,11 +28,10 @@ const MedicalDocuments = () => {
     fetchDocuments();
   }, []);
 
-  const fetchDocuments = async (type = null) => {
+  const fetchDocuments = async () => {
     try {
       setLoading(true);
-      const url = type ? `${API_URL}/api/documents?documentType=${type}` : `${API_URL}/api/documents`;
-      const response = await axios.get(url);
+      const response = await axios.get(`${API_URL}/api/documents`);
       setDocuments(response.data);
     } catch (error) {
       toast.error('Failed to load documents');
@@ -91,12 +90,11 @@ const MedicalDocuments = () => {
 
   const handleFilterChange = (filter) => {
     setActiveFilter(filter);
-    if (filter === 'all') {
-      fetchDocuments();
-    } else {
-      fetchDocuments(filter);
-    }
   };
+
+  const filteredDocuments = activeFilter === 'all'
+    ? documents
+    : documents.filter((doc) => doc.documentType === activeFilter);
 
   const getFileIcon = (fileName) => {
     const ext = fileName.split('.').pop().toLowerCase();
@@ -167,21 +165,34 @@ const MedicalDocuments = () => {
         </div>
       </div>
 
-      {/* Documents Grid */}
+      {/* All Documents Section */}
       <div className="bg-white rounded-2xl shadow-lg p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">All Documents</h2>
+            <p className="text-sm text-gray-500">
+              Showing: {activeFilter === 'all' ? 'All Documents' : activeFilter}
+            </p>
+          </div>
+          <div className="text-sm text-gray-500">
+            Total: {documents.length} • Visible: {filteredDocuments.length}
+          </div>
+        </div>
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
           </div>
-        ) : documents.length === 0 ? (
+        ) : filteredDocuments.length === 0 ? (
           <div className="text-center py-12">
             <FolderOpen className="mx-auto text-gray-300 mb-4" size={64} />
-            <p className="text-gray-500 text-lg mb-4">No documents found</p>
-            <p className="text-gray-400 text-sm">Upload your first medical document to get started</p>
+            <p className="text-gray-500 text-lg mb-4">
+              {activeFilter === 'all' ? 'No documents found' : `No ${activeFilter} documents`}
+            </p>
+            <p className="text-gray-400 text-sm">Upload a document to get started</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {documents.map(doc => (
+            {filteredDocuments.map(doc => (
               <div
                 key={doc._id}
                 className="border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg transition-all"

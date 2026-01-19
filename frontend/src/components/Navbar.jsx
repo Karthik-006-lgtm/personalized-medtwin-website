@@ -9,7 +9,8 @@ import {
   LogOut, 
   ChevronDown,
   Activity,
-  Droplets
+  Droplets,
+  Pencil
 } from 'lucide-react';
 
 const Navbar = () => {
@@ -115,6 +116,14 @@ const Navbar = () => {
                     >
                       <User size={18} className="text-gray-600" />
                       <span className="text-gray-700">View Profile</span>
+                    </Link>
+                    <Link
+                      to="/profile?mode=edit"
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100"
+                      onClick={() => setShowProfileDropdown(false)}
+                    >
+                      <Pencil size={18} className="text-gray-600" />
+                      <span className="text-gray-700">Edit Profile</span>
                     </Link>
                     <button
                       onClick={() => {

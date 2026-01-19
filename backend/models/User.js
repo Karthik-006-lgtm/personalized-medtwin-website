@@ -37,7 +37,10 @@ const userSchema = new mongoose.Schema({
       type: String, 
       enum: ['None', 'Diabetes', 'Hypertension', 'Heart Disease', 'Asthma', 'Arthritis', 'Thyroid Disorder', 'Other']
     }],
-    allergies: { type: String, default: '' },
+    allergies: [{
+      type: String,
+      enum: ['None', 'Pollen', 'Dust', 'Peanuts', 'Dairy', 'Eggs', 'Seafood', 'Gluten', 'Soy', 'Pet Dander', 'Latex', 'Other']
+    }],
     // Lifestyle Info
     exerciseFrequency: { 
       type: String, 
