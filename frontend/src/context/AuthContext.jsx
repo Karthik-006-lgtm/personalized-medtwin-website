@@ -57,13 +57,6 @@ export const AuthProvider = ({ children }) => {
       password,
       confirmPassword
     });
-    const { token: newToken, user: userData } = response.data;
-    
-    localStorage.setItem('token', newToken);
-    setToken(newToken);
-    axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
-    setUser(userData);
-    
     return response.data;
   };
 

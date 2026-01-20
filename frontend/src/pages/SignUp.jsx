@@ -43,7 +43,7 @@ const SignUp = () => {
     try {
       await signup(formData.email, formData.password, formData.confirmPassword);
       toast.success('Account created successfully! Welcome aboard.');
-      navigate('/dashboard');
+      navigate('/login');
     } catch (error) {
       toast.error(error.response?.data?.error || 'Sign up failed. Please try again.');
     } finally {
@@ -69,7 +69,7 @@ const SignUp = () => {
             Create Account
           </h2>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5" autoComplete="on">
             {/* Email */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -83,6 +83,7 @@ const SignUp = () => {
                   value={formData.email}
                   onChange={handleChange}
                   required
+                  autoComplete="email"
                   className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                   placeholder="you@example.com"
                 />
@@ -103,6 +104,7 @@ const SignUp = () => {
                   onChange={handleChange}
                   required
                   minLength={6}
+                  autoComplete="new-password"
                   className="w-full pl-11 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                   placeholder="••••••••"
                 />
@@ -131,6 +133,7 @@ const SignUp = () => {
                   onChange={handleChange}
                   required
                   minLength={6}
+                  autoComplete="new-password"
                   className="w-full pl-11 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                   placeholder="••••••••"
                 />

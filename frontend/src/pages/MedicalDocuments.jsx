@@ -9,7 +9,8 @@ import {
   Trash2,
   FolderOpen,
   File,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Plus
 } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -21,6 +22,9 @@ const MedicalDocuments = () => {
   const [selectedType, setSelectedType] = useState('');
   const [uploading, setUploading] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
+  const [showAnalyzeActions, setShowAnalyzeActions] = useState(false);
+  const [analyzeMode, setAnalyzeMode] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState(null);
 
   const documentTypes = ['X-Ray', 'MRI', 'Prescription', 'Lab Report'];
 
@@ -58,13 +62,21 @@ const MedicalDocuments = () => {
 
     setUploading(true);
     try {
-      await axios.post(`${API_URL}/api/documents/upload`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      
-      toast.success('Document uploaded successfully!');
+      if (analyzeMode && type === 'Prescription') {
+        const response = await axios.post(`${API_URL}/api/documents/analyze-prescription`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        setAnalysisResult(response.data.summary);
+        toast.success('Prescription analyzed successfully!');
+      } else {
+        await axios.post(`${API_URL}/api/documents/upload`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        toast.success('Document uploaded successfully!');
+      }
       setUploadModal(false);
       setSelectedType('');
+      setAnalyzeMode(false);
       fetchDocuments();
     } catch (error) {
       toast.error('Failed to upload document');
@@ -90,6 +102,12 @@ const MedicalDocuments = () => {
 
   const handleFilterChange = (filter) => {
     setActiveFilter(filter);
+  };
+
+  const openAnalyzePanel = () => {
+    setAnalyzeMode(true);
+    setSelectedType('Prescription');
+    setUploadModal(true);
   };
 
   const filteredDocuments = activeFilter === 'all'
@@ -164,6 +182,27 @@ const MedicalDocuments = () => {
           ))}
         </div>
       </div>
+
+      {/* Prescription Analysis Result */}
+      {analysisResult && (
+        <div className="bg-white rounded-2xl shadow-lg p-6 border-2 border-blue-100">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-800">Prescription Analysis Summary</h2>
+            <button
+              onClick={() => setAnalysisResult(null)}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
+            <div><span className="font-semibold">Medicine Name:</span> {analysisResult.medicineName}</div>
+            <div><span className="font-semibold">Dosage/Duration:</span> {analysisResult.dosageDuration}</div>
+            <div><span className="font-semibold">Doctor/Prescriber:</span> {analysisResult.prescriber}</div>
+            <div><span className="font-semibold">Reason:</span> {analysisResult.reason}</div>
+          </div>
+        </div>
+      )}
 
       {/* All Documents Section */}
       <div className="bg-white rounded-2xl shadow-lg p-6">
@@ -258,12 +297,19 @@ const MedicalDocuments = () => {
                 onClick={() => {
                   setUploadModal(false);
                   setSelectedType('');
+                  setAnalyzeMode(false);
                 }}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-all"
               >
                 <X size={24} />
               </button>
             </div>
+
+            {analyzeMode && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+                You are analyzing a prescription. Upload the document to extract key details.
+              </div>
+            )}
 
             {!selectedType ? (
               <div className="grid grid-cols-2 gap-4">
@@ -338,7 +384,7 @@ const MedicalDocuments = () => {
                     ) : (
                       <>
                         <Upload size={20} />
-                        Upload
+                        {analyzeMode ? 'Upload & Analyze' : 'Upload'}
                       </>
                     )}
                   </button>
@@ -348,6 +394,32 @@ const MedicalDocuments = () => {
           </div>
         </div>
       )}
+
+      {/* Floating Analyze Action */}
+      <div className="fixed bottom-6 left-6 z-40">
+        <div className="relative">
+          {showAnalyzeActions && (
+            <div className="mb-3">
+              <button
+                onClick={() => {
+                  setShowAnalyzeActions(false);
+                  openAnalyzePanel();
+                }}
+                className="px-4 py-2 bg-white border border-gray-200 rounded-lg shadow-md text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Analyze Prescription
+              </button>
+            </div>
+          )}
+          <button
+            onClick={() => setShowAnalyzeActions(!showAnalyzeActions)}
+            className="w-12 h-12 rounded-full bg-primary-600 text-white shadow-lg flex items-center justify-center hover:bg-primary-700 transition-all"
+            title="Prescription Analyzer"
+          >
+            <Plus size={22} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

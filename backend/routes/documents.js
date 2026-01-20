@@ -5,6 +5,8 @@ const MedicalDocument = require('../models/MedicalDocument');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const Tesseract = require('tesseract.js');
+const pdfParse = require('pdf-parse');
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../uploads/documents');
@@ -38,6 +40,52 @@ const upload = multer({
   }
 });
 
+const extractTextFromFile = async (filePath, mimeType) => {
+  if (mimeType === 'application/pdf') {
+    try {
+      const buffer = fs.readFileSync(filePath);
+      const pdfData = await pdfParse(buffer);
+      if (pdfData.text && pdfData.text.trim().length > 0) {
+        return pdfData.text;
+      }
+    } catch (error) {
+      console.warn('PDF text extraction failed:', error.message);
+    }
+  }
+
+  const result = await Tesseract.recognize(filePath, 'eng');
+  return result.data.text || '';
+};
+
+const parsePrescriptionSummary = (rawText) => {
+  const text = rawText.replace(/\s+/g, ' ').trim();
+  const lines = rawText.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+
+  const medicineRegex = /(?:Tab|Tablet|Cap|Capsule|Syrup|Inj|Injection|mg|ml)\b/gi;
+  const candidateLines = lines.filter(line => medicineRegex.test(line));
+  const medicineName = candidateLines[0] || lines.find(line => /rx|prescription/i.test(line)) || 'Not found';
+
+  const dosageMatch = text.match(/(\d+)\s*(days|day|weeks|week)\b/i)
+    || text.match(/(\d+)\s*(mg|ml)\b.*?(once|twice|thrice|daily|per day)/i)
+    || text.match(/(\d+\s*-\s*\d+)\s*(days|day|weeks|week)\b/i);
+  const dosageDuration = dosageMatch ? dosageMatch[0] : 'Not found';
+
+  const doctorMatch = lines.find(line => /dr\.?|doctor|prescriber/i.test(line));
+  const prescriber = doctorMatch || 'Not found';
+
+  const reasonMatch = text.match(/diagnosis[:\s-]*([A-Za-z0-9\s]+)/i)
+    || text.match(/dx[:\s-]*([A-Za-z0-9\s]+)/i)
+    || text.match(/complaint[:\s-]*([A-Za-z0-9\s]+)/i);
+  const reason = reasonMatch ? reasonMatch[1].trim().slice(0, 80) : 'Not found';
+
+  return {
+    medicineName,
+    dosageDuration,
+    prescriber,
+    reason
+  };
+};
+
 // Upload medical document
 router.post('/upload', auth, upload.single('document'), async (req, res) => {
   try {
@@ -61,6 +109,39 @@ router.post('/upload', auth, upload.single('document'), async (req, res) => {
     res.status(201).json({
       message: 'Document uploaded successfully',
       document
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Analyze prescription with OCR
+router.post('/analyze-prescription', auth, upload.single('document'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { notes } = req.body;
+
+    const document = new MedicalDocument({
+      userId: req.userId,
+      documentType: 'Prescription',
+      fileName: req.file.originalname,
+      fileUrl: `/uploads/documents/${req.file.filename}`,
+      fileSize: req.file.size,
+      notes: notes || ''
+    });
+
+    await document.save();
+
+    const extractedText = await extractTextFromFile(req.file.path, req.file.mimetype);
+    const summary = parsePrescriptionSummary(extractedText);
+
+    res.status(201).json({
+      message: 'Prescription analyzed successfully',
+      document,
+      summary
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
