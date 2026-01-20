@@ -40,6 +40,22 @@ const upload = multer({
   }
 });
 
+let ocrWorkerPromise = null;
+
+const getOcrWorker = async () => {
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = (async () => {
+      const worker = await Tesseract.createWorker('eng');
+      // Improve typical prescription OCR (mixed blocks, short lines)
+      await worker.setParameters({
+        tessedit_pageseg_mode: '6' // Assume a single uniform block of text
+      });
+      return worker;
+    })();
+  }
+  return ocrWorkerPromise;
+};
+
 const extractTextFromFile = async (filePath, mimeType) => {
   if (mimeType === 'application/pdf') {
     try {
@@ -53,36 +69,85 @@ const extractTextFromFile = async (filePath, mimeType) => {
     }
   }
 
-  const result = await Tesseract.recognize(filePath, 'eng');
+  // OCR fallback (images, scanned PDFs)
+  const imageBuffer = fs.readFileSync(filePath);
+  const worker = await getOcrWorker();
+  const result = await worker.recognize(imageBuffer);
   return result.data.text || '';
 };
 
 const parsePrescriptionSummary = (rawText) => {
-  const text = rawText.replace(/\s+/g, ' ').trim();
-  const lines = rawText.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const text = (rawText || '').replace(/\s+/g, ' ').trim();
+  const lines = (rawText || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .slice(0, 80);
 
-  const medicineRegex = /(?:Tab|Tablet|Cap|Capsule|Syrup|Inj|Injection|mg|ml)\b/gi;
-  const candidateLines = lines.filter(line => medicineRegex.test(line));
-  const medicineName = candidateLines[0] || lines.find(line => /rx|prescription/i.test(line)) || 'Not found';
+  // Common prescription patterns
+  const dosagePattern = /\b(\d+\s*-\s*\d+\s*-\s*\d+|OD|BD|TID|QID|HS|SOS|STAT)\b/i;
+  const medicineHint = /\b(tab|tablet|cap|capsule|syrup|inj|injection|mg|ml)\b/i;
+  const durationPattern = /\b(\d+)\s*(day|days|week|weeks|month|months)\b/i;
 
-  const dosageMatch = text.match(/(\d+)\s*(days|day|weeks|week)\b/i)
-    || text.match(/(\d+)\s*(mg|ml)\b.*?(once|twice|thrice|daily|per day)/i)
-    || text.match(/(\d+\s*-\s*\d+)\s*(days|day|weeks|week)\b/i);
-  const dosageDuration = dosageMatch ? dosageMatch[0] : 'Not found';
+  // Candidate medicine lines: look for dosage patterns OR medicine hints
+  const medicineCandidates = lines.filter(l => dosagePattern.test(l) || medicineHint.test(l));
 
-  const doctorMatch = lines.find(line => /dr\.?|doctor|prescriber/i.test(line));
-  const prescriber = doctorMatch || 'Not found';
+  // Extract medicine-like phrase from a line (simple heuristic)
+  const extractMedicineFromLine = (line) => {
+    // Remove obvious noise
+    const cleaned = line
+      .replace(/(rx|prescription|diagnosis|dx|sig|take|daily|morning|night)/gi, '')
+      .replace(dosagePattern, '')
+      .replace(durationPattern, '')
+      .replace(/[^\w\s.+-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
 
-  const reasonMatch = text.match(/diagnosis[:\s-]*([A-Za-z0-9\s]+)/i)
-    || text.match(/dx[:\s-]*([A-Za-z0-9\s]+)/i)
-    || text.match(/complaint[:\s-]*([A-Za-z0-9\s]+)/i);
-  const reason = reasonMatch ? reasonMatch[1].trim().slice(0, 80) : 'Not found';
+    // Prefer first 2-4 tokens that look like a drug name
+    const tokens = cleaned.split(' ').filter(Boolean);
+    const picked = tokens.slice(0, 4).join(' ');
+    return picked || null;
+  };
+
+  const extractedMeds = medicineCandidates
+    .map(extractMedicineFromLine)
+    .filter(Boolean)
+    .slice(0, 3);
+
+  const medicineName = extractedMeds[0] || 'Not found';
+
+  // Dosage / Duration extraction
+  const dosageLine = medicineCandidates.find(l => dosagePattern.test(l)) || '';
+  const durationMatch = text.match(durationPattern);
+  const dosageMatch =
+    dosageLine.match(dosagePattern) ||
+    text.match(/\b(\d+)\s*(mg|ml)\b/i);
+
+  const dosageDuration = [
+    dosageMatch ? dosageMatch[0] : null,
+    durationMatch ? durationMatch[0] : null
+  ].filter(Boolean).join(' • ') || 'Not found';
+
+  // Prescriber extraction
+  const prescriberLine =
+    lines.find(l => /\bdr\.?\b/i.test(l)) ||
+    lines.find(l => /\bdoctor\b/i.test(l)) ||
+    lines.find(l => /\bmbbs|md|ms|bds\b/i.test(l)) ||
+    'Not found';
+
+  // Reason extraction (best-effort)
+  const reasonMatch =
+    text.match(/\b(diagnosis|dx)[:\s-]*([A-Za-z0-9\s]{3,})/i) ||
+    text.match(/\b(complaint|c\/o)[:\s-]*([A-Za-z0-9\s]{3,})/i);
+  const reason = reasonMatch ? (reasonMatch[2] || '').trim().slice(0, 120) : 'Not found';
 
   return {
     medicineName,
+    medicines: extractedMeds,
     dosageDuration,
-    prescriber,
-    reason
+    prescriber: prescriberLine,
+    reason,
+    textPreview: text.slice(0, 600)
   };
 };
 

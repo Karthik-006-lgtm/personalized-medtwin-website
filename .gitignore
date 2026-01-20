@@ -29,6 +29,9 @@ Thumbs.db
 backend/uploads/*
 !backend/uploads/.gitkeep
 
+# OCR language data (downloaded by OCR runtime)
+backend/**/*.traineddata
+
 # ML models
 ml-service/models/*.pkl
 !ml-service/models/.gitkeep
