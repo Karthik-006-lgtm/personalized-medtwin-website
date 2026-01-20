@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const Tesseract = require('tesseract.js');
 const pdfParse = require('pdf-parse');
+const sharp = require('sharp');
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../uploads/documents');
@@ -56,6 +57,22 @@ const getOcrWorker = async () => {
   return ocrWorkerPromise;
 };
 
+const preprocessImageForOcr = async (filePath) => {
+  // Upscale + grayscale + normalize + sharpen for better OCR on photos
+  const img = sharp(filePath, { failOnError: false }).rotate();
+  const metadata = await img.metadata();
+  const width = metadata.width || 0;
+  const targetWidth = width > 0 ? Math.min(2200, Math.max(1400, width * 2)) : 1800;
+  return await img
+    .resize({ width: targetWidth, withoutEnlargement: false })
+    .grayscale()
+    .normalize()
+    .sharpen()
+    .threshold(180)
+    .png()
+    .toBuffer();
+};
+
 const extractTextFromFile = async (filePath, mimeType) => {
   if (mimeType === 'application/pdf') {
     try {
@@ -70,10 +87,23 @@ const extractTextFromFile = async (filePath, mimeType) => {
   }
 
   // OCR fallback (images, scanned PDFs)
-  const imageBuffer = fs.readFileSync(filePath);
   const worker = await getOcrWorker();
-  const result = await worker.recognize(imageBuffer);
-  return result.data.text || '';
+  const imageBuffer = await preprocessImageForOcr(filePath);
+
+  // Try two page segmentation modes and pick the better-confidence output
+  const tryOcr = async (psm) => {
+    await worker.setParameters({ tessedit_pageseg_mode: String(psm) });
+    const result = await worker.recognize(imageBuffer);
+    return {
+      text: result.data.text || '',
+      confidence: typeof result.data.confidence === 'number' ? result.data.confidence : 0
+    };
+  };
+
+  const r1 = await tryOcr(6);
+  const r2 = await tryOcr(11);
+  const best = r2.confidence > r1.confidence ? r2 : r1;
+  return best.text;
 };
 
 const parsePrescriptionSummary = (rawText) => {
@@ -88,6 +118,17 @@ const parsePrescriptionSummary = (rawText) => {
   const dosagePattern = /\b(\d+\s*-\s*\d+\s*-\s*\d+|OD|BD|TID|QID|HS|SOS|STAT)\b/i;
   const medicineHint = /\b(tab|tablet|cap|capsule|syrup|inj|injection|mg|ml)\b/i;
   const durationPattern = /\b(\d+)\s*(day|days|week|weeks|month|months)\b/i;
+
+  const headerLines = lines.slice(0, 12);
+  const hospitalLine =
+    headerLines.find(l => /\b(hospital|clinic|medical|centre|center)\b/i.test(l)) ||
+    headerLines.find(l => /\b(pharmacy|dispensary)\b/i.test(l)) ||
+    'Not found';
+
+  const doctorLine =
+    headerLines.find(l => /\bdr\.?\b/i.test(l)) ||
+    headerLines.find(l => /\bmbbs|md|ms|bds\b/i.test(l)) ||
+    'Not found';
 
   // Candidate medicine lines: look for dosage patterns OR medicine hints
   const medicineCandidates = lines.filter(l => dosagePattern.test(l) || medicineHint.test(l));
@@ -109,44 +150,25 @@ const parsePrescriptionSummary = (rawText) => {
     return picked || null;
   };
 
-  const extractedMeds = medicineCandidates
-    .map(extractMedicineFromLine)
-    .filter(Boolean)
-    .slice(0, 3);
+  const parseMedicineRow = (line) => {
+    const durationMatch = line.match(durationPattern) || text.match(durationPattern);
+    const dosageMatch = line.match(dosagePattern) || line.match(/\b(\d+)\s*(mg|ml)\b/i);
 
-  const medicineName = extractedMeds[0] || 'Not found';
+    const days = durationMatch ? durationMatch[1] : 'Not found';
+    const dosage = dosageMatch ? dosageMatch[0] : 'Not found';
+    const name = extractMedicineFromLine(line) || 'Not found';
+    return { medicineName: name, dosage, days };
+  };
 
-  // Dosage / Duration extraction
-  const dosageLine = medicineCandidates.find(l => dosagePattern.test(l)) || '';
-  const durationMatch = text.match(durationPattern);
-  const dosageMatch =
-    dosageLine.match(dosagePattern) ||
-    text.match(/\b(\d+)\s*(mg|ml)\b/i);
-
-  const dosageDuration = [
-    dosageMatch ? dosageMatch[0] : null,
-    durationMatch ? durationMatch[0] : null
-  ].filter(Boolean).join(' • ') || 'Not found';
-
-  // Prescriber extraction
-  const prescriberLine =
-    lines.find(l => /\bdr\.?\b/i.test(l)) ||
-    lines.find(l => /\bdoctor\b/i.test(l)) ||
-    lines.find(l => /\bmbbs|md|ms|bds\b/i.test(l)) ||
-    'Not found';
-
-  // Reason extraction (best-effort)
-  const reasonMatch =
-    text.match(/\b(diagnosis|dx)[:\s-]*([A-Za-z0-9\s]{3,})/i) ||
-    text.match(/\b(complaint|c\/o)[:\s-]*([A-Za-z0-9\s]{3,})/i);
-  const reason = reasonMatch ? (reasonMatch[2] || '').trim().slice(0, 120) : 'Not found';
+  const medicines = medicineCandidates
+    .map(parseMedicineRow)
+    .filter(m => m.medicineName && m.medicineName !== 'Not found')
+    .slice(0, 10);
 
   return {
-    medicineName,
-    medicines: extractedMeds,
-    dosageDuration,
-    prescriber: prescriberLine,
-    reason,
+    doctorName: doctorLine,
+    hospitalName: hospitalLine,
+    medicines,
     textPreview: text.slice(0, 600)
   };
 };

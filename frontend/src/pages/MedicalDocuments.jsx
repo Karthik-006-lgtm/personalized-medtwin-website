@@ -195,11 +195,42 @@ const MedicalDocuments = () => {
               Clear
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
-            <div><span className="font-semibold">Medicine Name:</span> {analysisResult.medicineName}</div>
-            <div><span className="font-semibold">Dosage/Duration:</span> {analysisResult.dosageDuration}</div>
-            <div><span className="font-semibold">Doctor/Prescriber:</span> {analysisResult.prescriber}</div>
-            <div><span className="font-semibold">Reason:</span> {analysisResult.reason}</div>
+          <div className="mb-4">
+            <p className="text-sm text-gray-700">
+              <span className="font-semibold">Doctor:</span> {analysisResult.doctorName || 'Not found'}
+            </p>
+            <p className="text-sm text-gray-700">
+              <span className="font-semibold">Hospital:</span> {analysisResult.hospitalName || 'Not found'}
+            </p>
+          </div>
+
+          <div className="overflow-x-auto border border-gray-200 rounded-lg">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-700">Medicine Name</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-700">Dosage</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-700">Count of Days</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(analysisResult.medicines || []).length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-3 text-gray-600" colSpan={3}>
+                      No medicines detected. Please try a clearer prescription image (bright, straight, high resolution).
+                    </td>
+                  </tr>
+                ) : (
+                  analysisResult.medicines.map((m, idx) => (
+                    <tr key={idx} className="border-t border-gray-200">
+                      <td className="px-4 py-3 text-gray-800">{m.medicineName || 'Not found'}</td>
+                      <td className="px-4 py-3 text-gray-700">{m.dosage || 'Not found'}</td>
+                      <td className="px-4 py-3 text-gray-700">{m.days || 'Not found'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
           {analysisResult.textPreview && (
             <div className="mt-4">
