@@ -232,17 +232,7 @@ const MedicalDocuments = () => {
               </tbody>
             </table>
           </div>
-          {analysisResult.textPreview && (
-            <div className="mt-4">
-              <p className="text-sm font-semibold text-gray-800 mb-2">Extracted Text (Preview)</p>
-              <pre className="text-xs bg-gray-50 border border-gray-200 rounded-lg p-3 max-h-40 overflow-auto whitespace-pre-wrap">
-                {analysisResult.textPreview}
-              </pre>
-              <p className="text-xs text-gray-500 mt-2">
-                If this preview is empty or unreadable, the uploaded image may be too blurry/handwritten for OCR. Try a clearer photo or PDF.
-              </p>
-            </div>
-          )}
+          {/* Raw extracted text intentionally hidden (UI requirement) */}
         </div>
       )}
 

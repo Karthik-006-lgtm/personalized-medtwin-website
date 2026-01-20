@@ -169,7 +169,7 @@ const parsePrescriptionSummary = (rawText) => {
     doctorName: doctorLine,
     hospitalName: hospitalLine,
     medicines,
-    textPreview: text.slice(0, 600)
+    // Intentionally not returning raw extracted text to UI
   };
 };
 
