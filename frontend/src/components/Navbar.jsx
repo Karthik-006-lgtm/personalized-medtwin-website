@@ -10,7 +10,9 @@ import {
   ChevronDown,
   Activity,
   Droplets,
-  Pencil
+  Pencil,
+  Menu,
+  X
 } from 'lucide-react';
 
 const Navbar = () => {
@@ -19,10 +21,16 @@ const Navbar = () => {
   const { user, logout } = useAuth();
   const { reminderEnabled, toggleReminder } = useHydration();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const closeMenus = () => {
+    setShowProfileDropdown(false);
+    setShowMobileMenu(false);
   };
 
   const navItems = [
@@ -40,8 +48,33 @@ const Navbar = () => {
             <span>HealthMonitor</span>
           </Link>
 
+          {/* Mobile Actions */}
+          <div className="flex items-center gap-2 md:hidden">
+            <button
+              onClick={toggleReminder}
+              className={`p-2 rounded-lg transition-all ${
+                reminderEnabled
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-400 hover:bg-gray-100'
+              }`}
+              title={reminderEnabled ? 'Hydration reminders ON' : 'Hydration reminders OFF'}
+            >
+              <Droplets size={20} />
+            </button>
+            <button
+              onClick={() => {
+                setShowProfileDropdown(false);
+                setShowMobileMenu(!showMobileMenu);
+              }}
+              className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-all"
+              aria-label="Toggle menu"
+            >
+              {showMobileMenu ? <X size={22} /> : <Menu size={22} />}
+            </button>
+          </div>
+
           {/* Navigation Links */}
-          <div className="flex items-center gap-6">
+          <div className="hidden md:flex items-center gap-6">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
@@ -112,7 +145,7 @@ const Navbar = () => {
                     <Link
                       to="/profile"
                       className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100"
-                      onClick={() => setShowProfileDropdown(false)}
+                      onClick={closeMenus}
                     >
                       <User size={18} className="text-gray-600" />
                       <span className="text-gray-700">View Profile</span>
@@ -120,14 +153,14 @@ const Navbar = () => {
                     <Link
                       to="/profile?mode=edit"
                       className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100"
-                      onClick={() => setShowProfileDropdown(false)}
+                      onClick={closeMenus}
                     >
                       <Pencil size={18} className="text-gray-600" />
                       <span className="text-gray-700">Edit Profile</span>
                     </Link>
                     <button
                       onClick={() => {
-                        setShowProfileDropdown(false);
+                        closeMenus();
                         handleLogout();
                       }}
                       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 transition-colors text-left"
@@ -141,6 +174,59 @@ const Navbar = () => {
             </div>
           </div>
         </div>
+
+        {/* Mobile Menu */}
+        {showMobileMenu && (
+          <div className="md:hidden border-t border-gray-200 pb-3">
+            <div className="pt-3 space-y-2">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = location.pathname === item.path;
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    onClick={closeMenus}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                      isActive
+                        ? 'bg-primary-50 text-primary-600 font-semibold'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Icon size={20} />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+              <Link
+                to="/profile"
+                onClick={closeMenus}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100"
+              >
+                <User size={20} />
+                <span>View Profile</span>
+              </Link>
+              <Link
+                to="/profile?mode=edit"
+                onClick={closeMenus}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100"
+              >
+                <Pencil size={20} />
+                <span>Edit Profile</span>
+              </Link>
+              <button
+                onClick={() => {
+                  closeMenus();
+                  handleLogout();
+                }}
+                className="w-full flex items-center gap-2 px-4 py-2 rounded-lg text-red-600 hover:bg-red-50"
+              >
+                <LogOut size={20} />
+                <span>Logout</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </nav>
   );
