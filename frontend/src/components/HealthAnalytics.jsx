@@ -79,6 +79,51 @@ const HealthAnalytics = ({ prediction, currentMetrics, previousData, onViewNutri
     return 'text-red-600';
   };
 
+  const getMetricAssessment = (metric, value) => {
+    if (value == null) return { percent: 0, status: 'N/A', unit: '' };
+
+    switch (metric) {
+      case 'Heart Rate': {
+        const unit = 'bpm';
+        if (value >= 60 && value <= 100) return { percent: 100, status: 'Normal', unit };
+        if ((value >= 50 && value < 60) || (value > 100 && value <= 110)) return { percent: 80, status: 'Borderline', unit };
+        if ((value >= 40 && value < 50) || (value > 110 && value <= 120)) return { percent: 60, status: 'High/Low', unit };
+        return { percent: 40, status: 'Critical', unit };
+      }
+      case 'BP Systolic': {
+        const unit = 'mmHg';
+        if (value >= 90 && value <= 119) return { percent: 100, status: 'Normal', unit };
+        if (value >= 120 && value <= 129) return { percent: 80, status: 'Elevated', unit };
+        if (value >= 130 && value <= 139) return { percent: 60, status: 'High (Stage 1)', unit };
+        if (value >= 140) return { percent: 40, status: 'High (Stage 2)', unit };
+        return { percent: 60, status: 'Low', unit };
+      }
+      case 'SpO2': {
+        const unit = '%';
+        if (value >= 95) return { percent: 100, status: 'Normal', unit };
+        if (value >= 92) return { percent: 80, status: 'Borderline', unit };
+        if (value >= 90) return { percent: 60, status: 'Low', unit };
+        return { percent: 40, status: 'Critical', unit };
+      }
+      case 'Sleep': {
+        const unit = 'hrs';
+        if (value >= 7 && value <= 9) return { percent: 100, status: 'Normal', unit };
+        if ((value >= 6 && value < 7) || (value > 9 && value <= 10)) return { percent: 80, status: 'Slightly Off', unit };
+        if ((value >= 5 && value < 6) || (value > 10 && value <= 11)) return { percent: 60, status: 'Poor', unit };
+        return { percent: 40, status: 'Very Poor', unit };
+      }
+      case 'Stress': {
+        const unit = '/10';
+        if (value >= 1 && value <= 3) return { percent: 100, status: 'Low', unit };
+        if (value >= 4 && value <= 6) return { percent: 80, status: 'Moderate', unit };
+        if (value >= 7 && value <= 8) return { percent: 60, status: 'High', unit };
+        return { percent: 40, status: 'Severe', unit };
+      }
+      default:
+        return { percent: 0, status: 'N/A', unit: '' };
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Overall Health Score */}
@@ -204,11 +249,12 @@ const HealthAnalytics = ({ prediction, currentMetrics, previousData, onViewNutri
         )}
 
         {activeChart === 'current' && (
-          <div className="h-96">
+          <div className="space-y-6">
+            <div className="h-96">
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart data={comparisonData.map(item => ({
                 metric: item.metric,
-                value: (item.current / item.current) * 100 // Normalized for display
+                value: getMetricAssessment(item.metric, item.current).percent
               }))}>
                 <PolarGrid />
                 <PolarAngleAxis dataKey="metric" />
@@ -217,6 +263,28 @@ const HealthAnalytics = ({ prediction, currentMetrics, previousData, onViewNutri
                 <Tooltip />
               </RadarChart>
             </ResponsiveContainer>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {comparisonData.map((item) => {
+                const assessment = getMetricAssessment(item.metric, item.current);
+                return (
+                  <div
+                    key={item.metric}
+                    className="bg-gray-50 border border-gray-200 rounded-lg p-4"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-semibold text-gray-800">{item.metric}</h4>
+                      <span className="text-sm font-semibold text-primary-700">{assessment.percent}%</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm text-gray-600">
+                      <span>Value: {item.current} {assessment.unit}</span>
+                      <span>Status: {assessment.status}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

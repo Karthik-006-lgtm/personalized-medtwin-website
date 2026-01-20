@@ -69,14 +69,15 @@ class NutritionRecommender:
         
         age_group = self._get_age_group(age)
         
-        # Calculate daily caloric needs (strictly age-based)
-        daily_calories = self._calculate_caloric_needs(age)
+        # Calculate daily caloric needs (age-led with profile adjustments)
+        daily_calories = self._calculate_caloric_needs(age, gender, weight, occupation, health_conditions)
         
         # Generate meal plans for 7 days
         meal_plans = self._generate_weekly_meal_plan(
             occupation,
             gender,
             age_group,
+            weight,
             daily_calories,
             diet_type,
             health_conditions,
@@ -89,6 +90,7 @@ class NutritionRecommender:
             occupation,
             gender,
             age_group,
+            weight,
             stress_level,
             diet_type,
             health_conditions
@@ -99,6 +101,7 @@ class NutritionRecommender:
             occupation,
             gender,
             age_group,
+            weight,
             stress_level,
             health_conditions
         )
@@ -127,18 +130,55 @@ class NutritionRecommender:
             return 'elderly'
         return 'adult'
 
-    def _calculate_caloric_needs(self, age: int) -> int:
-        """Strict age-based daily calorie target."""
+    def _calculate_caloric_needs(self, age: int, gender: str, weight: float,
+                                 occupation: str, health_conditions: List) -> int:
+        """Age-led calorie target with adjustments for gender, weight, occupation, and health."""
         age_group = self._get_age_group(age)
+
+        # Base targets by age group
         if age_group == 'teen':
-            return 2400
+            base = 2400
+        elif age_group == 'child':
+            base = 1800
+        elif age_group == 'elderly':
+            base = 1700
+        else:
+            base = 2000
+
+        # Gender adjustment
+        if gender == 'Male':
+            base += 150
+        elif gender == 'Female':
+            base -= 100
+
+        # Weight adjustment (normalize around 70kg)
+        if weight:
+            base += int((weight - 70) * 5)
+
+        # Occupation activity adjustment
+        profile = self.occupation_profiles.get(occupation, {'activity_level': 'moderate'})
+        activity = profile.get('activity_level', 'moderate')
+        if activity in ['very active', 'active']:
+            base += 200
+        elif activity in ['sedentary']:
+            base -= 150
+
+        # Health condition adjustments
+        if 'Diabetes' in health_conditions:
+            base -= 100
+        if 'Hypertension' in health_conditions:
+            base -= 80
+
+        # Clamp to safe bounds by age group
         if age_group == 'child':
-            return 1800
+            return max(1400, min(base, 2200))
+        if age_group == 'teen':
+            return max(2000, min(base, 3000))
         if age_group == 'elderly':
-            return 1700
-        return 2000
+            return max(1400, min(base, 2200))
+        return max(1600, min(base, 2600))
     
-    def _generate_weekly_meal_plan(self, occupation: str, gender: str, age_group: str, calories: int,
+    def _generate_weekly_meal_plan(self, occupation: str, gender: str, age_group: str, weight: float, calories: int,
                                      diet_type: str, health_conditions: List, 
                                      stress_level: int, heart_rate: int) -> List[Dict]:
         """Generate personalized 7-day meal plan (dynamic by week)."""
@@ -148,7 +188,7 @@ class NutritionRecommender:
         has_hypertension = 'Hypertension' in health_conditions
         week_offset = self._get_week_offset()
         preference_tags = self._build_preference_tags(
-            age_group, gender, occupation, stress_level, health_conditions, heart_rate
+            age_group, gender, occupation, weight, stress_level, health_conditions, heart_rate
         )
         
         # Distribute calories across meals
@@ -161,13 +201,13 @@ class NutritionRecommender:
         
         for i, day in enumerate(days):
             breakfast = self._get_breakfast_option(
-                i, week_offset, preference_tags, is_veg, breakfast_cal, has_diabetes
+                i, week_offset, 1, preference_tags, is_veg, breakfast_cal, has_diabetes
             )
             lunch = self._get_lunch_option(
-                i, week_offset, preference_tags, is_veg, lunch_cal, has_diabetes, has_hypertension
+                i, week_offset, 2, preference_tags, is_veg, lunch_cal, has_diabetes, has_hypertension
             )
             dinner = self._get_dinner_option(
-                i, week_offset, preference_tags, is_veg, dinner_cal, has_diabetes, has_hypertension
+                i, week_offset, 3, preference_tags, is_veg, dinner_cal, has_diabetes, has_hypertension
             )
             
             meal_plans.append({
@@ -183,7 +223,7 @@ class NutritionRecommender:
     def _get_week_offset(self) -> int:
         return datetime.now().isocalendar()[1]
 
-    def _build_preference_tags(self, age_group: str, gender: str, occupation: str,
+    def _build_preference_tags(self, age_group: str, gender: str, occupation: str, weight: float,
                                stress_level: int, health_conditions: List, heart_rate: int) -> List[str]:
         tags = ['easy', 'budget', 'quick']
         profile = self.occupation_profiles.get(occupation, {})
@@ -202,6 +242,12 @@ class NutritionRecommender:
             tags.append('high_energy')
         elif activity in ['sedentary']:
             tags.append('light')
+
+        if weight:
+            if weight >= 85:
+                tags.append('light')
+            elif weight <= 55:
+                tags.append('high_energy')
         
         if stress_level > 6:
             tags.append('calming')
@@ -214,14 +260,15 @@ class NutritionRecommender:
         
         return tags
 
-    def _select_option(self, options: List[Dict], day_index: int, week_offset: int, preferred_tags: List[str]) -> Dict:
+    def _select_option(self, options: List[Dict], day_index: int, week_offset: int,
+                       preferred_tags: List[str], slot_offset: int) -> Dict:
         def score(option: Dict) -> int:
             return len(set(option.get('tags', [])) & set(preferred_tags))
         
         scored = sorted(options, key=score, reverse=True)
         if not scored:
             return options[day_index % len(options)]
-        idx = (day_index + week_offset) % len(scored)
+        idx = (day_index + week_offset + slot_offset) % len(scored)
         return scored[idx]
 
     def _select_top_items(self, options: List[Dict], preferred_tags: List[str], limit: int) -> List[Dict]:
@@ -258,7 +305,7 @@ class NutritionRecommender:
         option['tags'] = list(base_tags)
         return option
     
-    def _get_breakfast_option(self, day_index: int, week_offset: int, preference_tags: List[str],
+    def _get_breakfast_option(self, day_index: int, week_offset: int, slot_offset: int, preference_tags: List[str],
                                 is_veg: bool, target_cal: int, has_diabetes: bool) -> Dict:
         """Get breakfast option for the day"""
         
@@ -326,9 +373,9 @@ class NutritionRecommender:
         
         options = veg_options if is_veg else non_veg_options
         options = [self._apply_meal_defaults(option, 'breakfast') for option in options]
-        return self._select_option(options, day_index, week_offset, preference_tags)
+        return self._select_option(options, day_index, week_offset, preference_tags, slot_offset)
     
-    def _get_lunch_option(self, day_index: int, week_offset: int, preference_tags: List[str],
+    def _get_lunch_option(self, day_index: int, week_offset: int, slot_offset: int, preference_tags: List[str],
                            is_veg: bool, target_cal: int, has_diabetes: bool, has_hypertension: bool) -> Dict:
         """Get lunch option for the day"""
         
@@ -403,12 +450,12 @@ class NutritionRecommender:
         
         options = veg_options if is_veg else non_veg_options
         options = [self._apply_meal_defaults(option, 'lunch') for option in options]
-        selected = self._select_option(options, day_index, week_offset, preference_tags)
+        selected = self._select_option(options, day_index, week_offset, preference_tags, slot_offset)
         if has_hypertension:
             selected['note'] = 'Prepared with minimal salt, herbs for flavor'
         return selected
     
-    def _get_dinner_option(self, day_index: int, week_offset: int, preference_tags: List[str],
+    def _get_dinner_option(self, day_index: int, week_offset: int, slot_offset: int, preference_tags: List[str],
                             is_veg: bool, target_cal: int, has_diabetes: bool, has_hypertension: bool) -> Dict:
         """Get dinner option for the day"""
         
@@ -483,14 +530,14 @@ class NutritionRecommender:
         
         options = veg_options if is_veg else non_veg_options
         options = [self._apply_meal_defaults(option, 'dinner') for option in options]
-        return self._select_option(options, day_index, week_offset, preference_tags)
+        return self._select_option(options, day_index, week_offset, preference_tags, slot_offset)
     
     def _generate_snack_recommendations(self, occupation: str, gender: str, age_group: str,
-                                         stress_level: int, diet_type: str, health_conditions: List) -> List[Dict]:
+                                         weight: float, stress_level: int, diet_type: str, health_conditions: List) -> List[Dict]:
         """Generate healthy snack recommendations"""
         
         is_veg = diet_type in ['Vegetarian', 'Vegan']
-        preferred_tags = self._build_preference_tags(age_group, gender, occupation, stress_level, health_conditions, 70)
+        preferred_tags = self._build_preference_tags(age_group, gender, occupation, weight, stress_level, health_conditions, 70)
         
         snacks = [
             {
@@ -573,10 +620,10 @@ class NutritionRecommender:
         return self._select_top_items(snacks, preferred_tags, limit=6)
     
     def _generate_drink_recommendations(self, occupation: str, gender: str, age_group: str,
-                                         stress_level: int, health_conditions: List) -> List[Dict]:
+                                         weight: float, stress_level: int, health_conditions: List) -> List[Dict]:
         """Generate healthy drink recommendations"""
         
-        preferred_tags = self._build_preference_tags(age_group, gender, occupation, stress_level, health_conditions, 70)
+        preferred_tags = self._build_preference_tags(age_group, gender, occupation, weight, stress_level, health_conditions, 70)
         drinks = [
             {
                 'name': 'Green Tea',
