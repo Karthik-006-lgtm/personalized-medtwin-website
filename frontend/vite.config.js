@@ -3,6 +3,10 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // Avoid noisy build warnings for this project bundle size
+    chunkSizeWarningLimit: 2000
+  },
   server: {
     port: 5173,
     proxy: {
