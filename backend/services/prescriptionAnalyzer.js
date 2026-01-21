@@ -21,6 +21,13 @@ const getOpenAIClient = () => {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 };
 
+const getGeminiClient = () => {
+  if (!process.env.GEMINI_API_KEY) return null;
+  // eslint-disable-next-line global-require
+  const { GoogleGenerativeAI } = require('@google/generative-ai');
+  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+};
+
 const preprocessImageForVision = async (filePath) => {
   // Produce a stable PNG for vision/OCR
   return sharp(filePath, { failOnError: false })
@@ -53,6 +60,14 @@ const safeJsonParse = (text) => {
   }
 };
 
+const stripCodeFences = (text) => {
+  if (!text) return '';
+  const trimmed = text.trim();
+  // Remove ```json ... ``` or ``` ... ```
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? fenced[1].trim() : trimmed;
+};
+
 const normalizeDays = (value) => {
   if (value == null) return 'Not found';
   const str = String(value).trim();
@@ -79,6 +94,55 @@ const ensureSummaryShape = (obj) => {
   return { doctorName, hospitalName, medicines: cleaned };
 };
 
+async function analyzeWithGeminiVision({ filePath }) {
+  const genAI = getGeminiClient();
+  if (!genAI) return null;
+
+  const pngBuffer = await preprocessImageForVision(filePath);
+  const requestId = crypto.randomBytes(6).toString('hex');
+
+  // Gemini can do both OCR + handwriting understanding from the image directly.
+  const modelName = process.env.GEMINI_VISION_MODEL || 'gemini-1.5-pro';
+  const model = genAI.getGenerativeModel({ model: modelName });
+
+  const prompt = [
+    `RequestId: ${requestId}`,
+    'You are a medical prescription extractor.',
+    'The prescription may be handwritten.',
+    'Extract and return ONLY valid JSON (no markdown, no extra words).',
+    'JSON schema:',
+    '{',
+    '  "doctorName": string,',
+    '  "hospitalName": string,',
+    '  "medicines": [',
+    '    { "medicineName": string, "dosage": string, "days": string|number }',
+    '  ]',
+    '}',
+    'Rules:',
+    '- If unknown, use "Not found".',
+    '- Dosage examples: "1-0-1", "OD", "BD", "TID", "500mg BD".',
+    '- days should be the number of days if possible (example: 5).',
+  ].join('\n');
+
+  const result = await model.generateContent([
+    { text: prompt },
+    {
+      inlineData: {
+        mimeType: 'image/png',
+        data: pngBuffer.toString('base64')
+      }
+    }
+  ]);
+
+  const text = result?.response?.text?.() || '';
+  const parsed = safeJsonParse(stripCodeFences(text));
+
+  return {
+    summary: ensureSummaryShape(parsed),
+    meta: { requestId, used: 'gemini_vision', parseError: !parsed }
+  };
+}
+
 /**
  * LLM+Vision prescription extraction.
  * - Step 1: OCR with Google Vision (if configured)
@@ -86,6 +150,10 @@ const ensureSummaryShape = (obj) => {
  * - Step 3: Return structured JSON for UI table
  */
 async function analyzePrescriptionLLMVision({ filePath, mimeType }) {
+  // Prefer Gemini Vision if configured (single API key approach)
+  const gemini = await analyzeWithGeminiVision({ filePath });
+  if (gemini && gemini.summary) return gemini;
+
   const openai = getOpenAIClient();
   if (!openai) return null;
 
@@ -137,7 +205,7 @@ async function analyzePrescriptionLLMVision({ filePath, mimeType }) {
   });
 
   const content = resp?.choices?.[0]?.message?.content || '';
-  const parsed = safeJsonParse(content);
+  const parsed = safeJsonParse(stripCodeFences(content));
   if (!parsed) {
     return {
       summary: ensureSummaryShape(null),
