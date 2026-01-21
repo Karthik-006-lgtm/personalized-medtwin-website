@@ -197,10 +197,16 @@ const MedicalDocuments = () => {
           </div>
           <div className="mb-4">
             <p className="text-sm text-gray-700">
+              <span className="font-semibold">Patient:</span> {analysisResult.patientName || 'Not found'}
+            </p>
+            <p className="text-sm text-gray-700">
               <span className="font-semibold">Doctor:</span> {analysisResult.doctorName || 'Not found'}
             </p>
             <p className="text-sm text-gray-700">
               <span className="font-semibold">Hospital:</span> {analysisResult.hospitalName || 'Not found'}
+            </p>
+            <p className="text-sm text-gray-700">
+              <span className="font-semibold">Reason:</span> {analysisResult.reason || 'Not found'}
             </p>
           </div>
 

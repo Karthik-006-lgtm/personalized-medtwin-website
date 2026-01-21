@@ -8,6 +8,7 @@ const fs = require('fs');
 const Tesseract = require('tesseract.js');
 const pdfParse = require('pdf-parse');
 const sharp = require('sharp');
+const { analyzeWithGeminiVision } = require('../services/prescriptionAnalyzer');
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../uploads/documents');
@@ -117,21 +118,64 @@ const parsePrescriptionSummary = (rawText) => {
   // Common prescription patterns
   const dosagePattern = /\b(\d+\s*-\s*\d+\s*-\s*\d+|OD|BD|TID|QID|HS|SOS|STAT)\b/i;
   const medicineHint = /\b(tab|tablet|cap|capsule|syrup|inj|injection|mg|ml)\b/i;
-  const durationPattern = /\b(\d+)\s*(day|days|week|weeks|month|months)\b/i;
+  const durationPattern = /\b(\d+)\s*(day|days|d|week|weeks|w|month|months|m)\b/i;
+  const reasonPattern = /\b(dx|diagnosis|diag|complaint|c\/o|chief complaint|indication|for)\b/i;
+  const patientPattern = /\b(patient|name)\b/i;
+  const doctorPattern = /\bdr\.?\b|\bmbbs|md|ms|bds\b/i;
+  const hospitalPattern = /\b(hospital|clinic|medical|centre|center|pharmacy|dispensary)\b/i;
 
   const headerLines = lines.slice(0, 12);
   const hospitalLine =
-    headerLines.find(l => /\b(hospital|clinic|medical|centre|center)\b/i.test(l)) ||
-    headerLines.find(l => /\b(pharmacy|dispensary)\b/i.test(l)) ||
+    headerLines.find(l => hospitalPattern.test(l)) ||
     'Not found';
 
   const doctorLine =
-    headerLines.find(l => /\bdr\.?\b/i.test(l)) ||
-    headerLines.find(l => /\bmbbs|md|ms|bds\b/i.test(l)) ||
+    headerLines.find(l => doctorPattern.test(l)) ||
     'Not found';
 
+  // Patient name (best-effort). We try explicit labels first; otherwise look for common honorifics.
+  const patientLineCandidate =
+    headerLines.find((l) => /^\s*(patient\s*name|patient|name)\s*[:\-]/i.test(l)) ||
+    headerLines.find((l) => patientPattern.test(l) && !doctorPattern.test(l) && !hospitalPattern.test(l)) ||
+    headerLines.find((l) => /\b(mr|mrs|ms|miss|master)\.?\b/i.test(l) && !doctorPattern.test(l) && !hospitalPattern.test(l)) ||
+    '';
+
+  const patientName = (() => {
+    if (!patientLineCandidate) return 'Not found';
+    const cleaned = patientLineCandidate
+      .replace(/^\s*(patient\s*name|patient|name)\s*[:\-]?\s*/i, '')
+      .replace(/[^\w\s,./()-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    // Avoid accidentally returning doctor/hospital lines
+    if (!cleaned) return 'Not found';
+    if (doctorPattern.test(cleaned) || hospitalPattern.test(cleaned)) return 'Not found';
+    // Very short tokens are usually noise in OCR
+    if (cleaned.length < 3) return 'Not found';
+    return cleaned;
+  })();
+
+  // Diagnosis / Reason (best-effort heuristic; handwriting OCR can be noisy)
+  const reasonLine = lines.find((l) => reasonPattern.test(l)) || '';
+  const reason = (() => {
+    if (!reasonLine) return 'Not found';
+    // Remove the label (Dx/Diagnosis/etc.) and keep the remaining phrase
+    const cleaned = reasonLine
+      .replace(/^\s*(dx|diagnosis|diag|complaint|c\/o|chief complaint|indication|for)\s*[:\-]?\s*/i, '')
+      .replace(/[^\w\s,./()-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return cleaned || 'Not found';
+  })();
+
   // Candidate medicine lines: look for dosage patterns OR medicine hints
-  const medicineCandidates = lines.filter(l => dosagePattern.test(l) || medicineHint.test(l));
+  const medicineCandidates = lines.filter((l) => {
+    if (!(dosagePattern.test(l) || medicineHint.test(l))) return false;
+    // Exclude header-y lines that tend to pollute medicine extraction
+    if (hospitalPattern.test(l) || doctorPattern.test(l) || patientPattern.test(l)) return false;
+    if (reasonPattern.test(l) && !medicineHint.test(l)) return false;
+    return true;
+  });
 
   // Extract medicine-like phrase from a line (simple heuristic)
   const extractMedicineFromLine = (line) => {
@@ -140,22 +184,32 @@ const parsePrescriptionSummary = (rawText) => {
       .replace(/(rx|prescription|diagnosis|dx|sig|take|daily|morning|night)/gi, '')
       .replace(dosagePattern, '')
       .replace(durationPattern, '')
+      .replace(/\b(\d+)\s*(mg|ml)\b/gi, '')
+      .replace(/\b(tab|tablet|cap|capsule|syrup|inj|injection)\b/gi, '')
       .replace(/[^\w\s.+-]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
 
     // Prefer first 2-4 tokens that look like a drug name
     const tokens = cleaned.split(' ').filter(Boolean);
-    const picked = tokens.slice(0, 4).join(' ');
+    const picked = tokens.slice(0, 5).join(' ');
     return picked || null;
   };
 
   const parseMedicineRow = (line) => {
-    const durationMatch = line.match(durationPattern) || text.match(durationPattern);
-    const dosageMatch = line.match(dosagePattern) || line.match(/\b(\d+)\s*(mg|ml)\b/i);
+    const durationMatch =
+      line.match(/\b(?:x|for)\s*(\d+)\s*(?:day|days|d|week|weeks|w|month|months|m)?\b/i) ||
+      line.match(durationPattern) ||
+      text.match(durationPattern);
+    const doseTokenMatch = line.match(dosagePattern);
+    const strengthMatch = line.match(/\b(\d+)\s*(mg|ml)\b/i);
 
     const days = durationMatch ? durationMatch[1] : 'Not found';
-    const dosage = dosageMatch ? dosageMatch[0] : 'Not found';
+    const dosage =
+      [strengthMatch ? strengthMatch[0] : null, doseTokenMatch ? doseTokenMatch[0] : null]
+        .filter(Boolean)
+        .join(' ')
+        .trim() || 'Not found';
     const name = extractMedicineFromLine(line) || 'Not found';
     return { medicineName: name, dosage, days };
   };
@@ -166,8 +220,10 @@ const parsePrescriptionSummary = (rawText) => {
     .slice(0, 10);
 
   return {
+    patientName,
     doctorName: doctorLine,
     hospitalName: hospitalLine,
+    reason,
     medicines,
     // Intentionally not returning raw extracted text to UI
   };
@@ -222,8 +278,24 @@ router.post('/analyze-prescription', auth, upload.single('document'), async (req
 
     await document.save();
 
-    const extractedText = await extractTextFromFile(req.file.path, req.file.mimetype);
-    const summary = parsePrescriptionSummary(extractedText);
+    // Prefer Gemini Vision for images when configured (best for handwriting).
+    // For PDFs/docs or when GEMINI_API_KEY is not set, fallback to local OCR + heuristics.
+    let summary = null;
+    if (process.env.GEMINI_API_KEY && /^image\//i.test(req.file.mimetype)) {
+      try {
+        const gemini = await analyzeWithGeminiVision({ filePath: req.file.path });
+        if (gemini?.summary) {
+          summary = gemini.summary;
+        }
+      } catch (e) {
+        console.warn('Gemini Vision analyze failed, falling back to local OCR:', e.message);
+      }
+    }
+
+    if (!summary) {
+      const extractedText = await extractTextFromFile(req.file.path, req.file.mimetype);
+      summary = parsePrescriptionSummary(extractedText);
+    }
 
     res.status(201).json({
       message: 'Prescription analyzed successfully',
