@@ -8,7 +8,6 @@ const fs = require('fs');
 const Tesseract = require('tesseract.js');
 const pdfParse = require('pdf-parse');
 const sharp = require('sharp');
-const { analyzePrescriptionLLMVision } = require('../services/prescriptionAnalyzer');
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../uploads/documents');
@@ -223,18 +222,8 @@ router.post('/analyze-prescription', auth, upload.single('document'), async (req
 
     await document.save();
 
-    // Preferred: LLM + Vision pipeline (best for handwriting) if configured
-    const llmResult = await analyzePrescriptionLLMVision({
-      filePath: req.file.path,
-      mimeType: req.file.mimetype
-    });
-
-    // Fallback: local OCR + heuristics (works best for printed/clear scans)
-    let summary = llmResult?.summary;
-    if (!summary) {
-      const extractedText = await extractTextFromFile(req.file.path, req.file.mimetype);
-      summary = parsePrescriptionSummary(extractedText);
-    }
+    const extractedText = await extractTextFromFile(req.file.path, req.file.mimetype);
+    const summary = parsePrescriptionSummary(extractedText);
 
     res.status(201).json({
       message: 'Prescription analyzed successfully',
