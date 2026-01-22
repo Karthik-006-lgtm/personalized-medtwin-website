@@ -42,6 +42,22 @@ const upload = multer({
   }
 });
 
+// Memory-only upload (used for analysis so files are NOT stored on disk or in DB)
+const analyzeUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|pdf/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = /image|pdf/.test(file.mimetype);
+
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Only images and PDFs are allowed for prescription analysis'));
+  }
+});
+
 let ocrWorkerPromise = null;
 
 const getOcrWorker = async () => {
@@ -74,6 +90,21 @@ const preprocessImageForOcr = async (filePath) => {
     .toBuffer();
 };
 
+const preprocessImageBufferForOcr = async (buffer) => {
+  const img = sharp(buffer, { failOnError: false }).rotate();
+  const metadata = await img.metadata();
+  const width = metadata.width || 0;
+  const targetWidth = width > 0 ? Math.min(2200, Math.max(1400, width * 2)) : 1800;
+  return await img
+    .resize({ width: targetWidth, withoutEnlargement: false })
+    .grayscale()
+    .normalize()
+    .sharpen()
+    .threshold(180)
+    .png()
+    .toBuffer();
+};
+
 const extractTextFromFile = async (filePath, mimeType) => {
   if (mimeType === 'application/pdf') {
     try {
@@ -92,6 +123,37 @@ const extractTextFromFile = async (filePath, mimeType) => {
   const imageBuffer = await preprocessImageForOcr(filePath);
 
   // Try two page segmentation modes and pick the better-confidence output
+  const tryOcr = async (psm) => {
+    await worker.setParameters({ tessedit_pageseg_mode: String(psm) });
+    const result = await worker.recognize(imageBuffer);
+    return {
+      text: result.data.text || '',
+      confidence: typeof result.data.confidence === 'number' ? result.data.confidence : 0
+    };
+  };
+
+  const r1 = await tryOcr(6);
+  const r2 = await tryOcr(11);
+  const best = r2.confidence > r1.confidence ? r2 : r1;
+  return best.text;
+};
+
+const extractTextFromUpload = async ({ buffer, mimeType }) => {
+  if (mimeType === 'application/pdf') {
+    try {
+      const pdfData = await pdfParse(buffer);
+      if (pdfData.text && pdfData.text.trim().length > 0) {
+        return pdfData.text;
+      }
+    } catch (error) {
+      console.warn('PDF text extraction failed:', error.message);
+    }
+  }
+
+  // OCR fallback (images, scanned PDFs)
+  const worker = await getOcrWorker();
+  const imageBuffer = await preprocessImageBufferForOcr(buffer);
+
   const tryOcr = async (psm) => {
     await worker.setParameters({ tessedit_pageseg_mode: String(psm) });
     const result = await worker.recognize(imageBuffer);
@@ -259,31 +321,18 @@ router.post('/upload', auth, upload.single('document'), async (req, res) => {
 });
 
 // Analyze prescription with OCR
-router.post('/analyze-prescription', auth, upload.single('document'), async (req, res) => {
+router.post('/analyze-prescription', auth, analyzeUpload.single('document'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-
-    const { notes } = req.body;
-
-    const document = new MedicalDocument({
-      userId: req.userId,
-      documentType: 'Prescription',
-      fileName: req.file.originalname,
-      fileUrl: `/uploads/documents/${req.file.filename}`,
-      fileSize: req.file.size,
-      notes: notes || ''
-    });
-
-    await document.save();
 
     // Prefer Gemini Vision for images when configured (best for handwriting).
     // For PDFs/docs or when GEMINI_API_KEY is not set, fallback to local OCR + heuristics.
     let summary = null;
     if (process.env.GEMINI_API_KEY && /^image\//i.test(req.file.mimetype)) {
       try {
-        const gemini = await analyzeWithGeminiVision({ filePath: req.file.path });
+        const gemini = await analyzeWithGeminiVision({ buffer: req.file.buffer });
         if (gemini?.summary) {
           summary = gemini.summary;
         }
@@ -293,14 +342,14 @@ router.post('/analyze-prescription', auth, upload.single('document'), async (req
     }
 
     if (!summary) {
-      const extractedText = await extractTextFromFile(req.file.path, req.file.mimetype);
+      const extractedText = await extractTextFromUpload({ buffer: req.file.buffer, mimeType: req.file.mimetype });
       summary = parsePrescriptionSummary(extractedText);
     }
 
     res.status(201).json({
       message: 'Prescription analyzed successfully',
-      document,
-      summary
+      summary,
+      transient: true
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

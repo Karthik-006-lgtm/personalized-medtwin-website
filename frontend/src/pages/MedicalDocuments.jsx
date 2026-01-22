@@ -25,6 +25,16 @@ const MedicalDocuments = () => {
   const [showAnalyzeActions, setShowAnalyzeActions] = useState(false);
   const [analyzeMode, setAnalyzeMode] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [chatModal, setChatModal] = useState(false);
+  const [chatMessages, setChatMessages] = useState([
+    {
+      role: 'bot',
+      content:
+        'Hi, I’m Med Twin. Ask a medical/health/biology question. I can’t help with non-medical topics or privacy-violating requests.'
+    }
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatSending, setChatSending] = useState(false);
 
   const documentTypes = ['X-Ray', 'MRI', 'Prescription', 'Lab Report'];
 
@@ -77,7 +87,10 @@ const MedicalDocuments = () => {
       setUploadModal(false);
       setSelectedType('');
       setAnalyzeMode(false);
-      fetchDocuments();
+      // Only refresh the vault for real uploads; analysis uploads are transient (not saved).
+      if (!(analyzeMode && type === 'Prescription')) {
+        fetchDocuments();
+      }
     } catch (error) {
       toast.error('Failed to upload document');
       console.error(error);
@@ -108,6 +121,54 @@ const MedicalDocuments = () => {
     setAnalyzeMode(true);
     setSelectedType('Prescription');
     setUploadModal(true);
+  };
+
+  const openChatPanel = () => {
+    setShowAnalyzeActions(false);
+    setChatModal(true);
+  };
+
+  const sendChatMessage = async () => {
+    const question = chatInput.trim();
+    if (!question || chatSending) return;
+
+    const nextMessages = [...chatMessages, { role: 'user', content: question }];
+
+    setChatInput('');
+    setChatMessages(nextMessages);
+    setChatSending(true);
+
+    try {
+      const context = nextMessages
+        .map((m) => ({ role: m.role, content: m.content }))
+        .slice(-12);
+
+      const res = await axios.post(`${API_URL}/api/chatbot/ask`, { question, messages: context });
+      const data = res.data || {};
+
+      setChatMessages([
+        ...nextMessages,
+        {
+          role: 'bot',
+          content: data.answer || 'Sorry, I could not generate a response.',
+          refused: !!data.refused,
+          citations: Array.isArray(data.citations) ? data.citations : []
+        }
+      ]);
+    } catch (error) {
+      console.error(error);
+      setChatMessages([
+        ...nextMessages,
+        {
+          role: 'bot',
+          content: 'Chatbot failed to respond. Please try again.',
+          refused: true
+        }
+      ]);
+      toast.error('Chatbot request failed');
+    } finally {
+      setChatSending(false);
+    }
   };
 
   const filteredDocuments = activeFilter === 'all'
@@ -433,11 +494,96 @@ const MedicalDocuments = () => {
         </div>
       )}
 
+      {/* Chatbot Modal */}
+      {chatModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 flex flex-col h-[80vh]">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-2xl font-bold text-gray-800">Chat with Bot</h3>
+                <p className="text-sm text-gray-500">
+                  Medical & biology only • concise answers • no privacy violations
+                </p>
+              </div>
+              <button
+                onClick={() => setChatModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-all"
+                aria-label="Close chat"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-3">
+              {chatMessages.map((m, idx) => (
+                <div
+                  key={idx}
+                  className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-lg px-4 py-3 text-sm whitespace-pre-wrap ${
+                      m.role === 'user'
+                        ? 'bg-primary-600 text-white'
+                        : m.refused
+                          ? 'bg-red-50 text-red-700 border border-red-200'
+                          : 'bg-white text-gray-800 border border-gray-200'
+                    }`}
+                  >
+                    {m.content}
+                    {m.role !== 'user' && Array.isArray(m.citations) && m.citations.length > 0 && (
+                      <div className="mt-3 text-xs">
+                        <div className="font-semibold text-gray-600 mb-1">Sources</div>
+                        <ul className="list-disc pl-5 space-y-1">
+                          {m.citations.slice(0, 4).map((c, cIdx) => (
+                            <li key={cIdx} className="text-gray-600">
+                              <a
+                                href={c.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline hover:text-primary-700"
+                              >
+                                {c.title || c.url}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendChatMessage();
+                  }
+                }}
+                placeholder="Ask a medical/biology question…"
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+              />
+              <button
+                onClick={sendChatMessage}
+                disabled={chatSending || !chatInput.trim()}
+                className="px-5 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {chatSending ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Floating Analyze Action */}
       <div className="fixed bottom-6 left-6 z-40">
         <div className="relative">
           {showAnalyzeActions && (
-            <div className="mb-3">
+            <div className="mb-3 space-y-2">
               <button
                 onClick={() => {
                   setShowAnalyzeActions(false);
@@ -446,6 +592,12 @@ const MedicalDocuments = () => {
                 className="px-4 py-2 bg-white border border-gray-200 rounded-lg shadow-md text-sm font-semibold text-gray-700 hover:bg-gray-50"
               >
                 Analyze Prescription
+              </button>
+              <button
+                onClick={openChatPanel}
+                className="px-4 py-2 bg-white border border-gray-200 rounded-lg shadow-md text-sm font-semibold text-gray-700 hover:bg-gray-50 w-full text-left"
+              >
+                Chat with Bot
               </button>
             </div>
           )}

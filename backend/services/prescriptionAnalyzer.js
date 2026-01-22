@@ -8,9 +8,10 @@ const getGeminiClient = () => {
   return new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 };
 
-const preprocessImageForVision = async (filePath) => {
+const preprocessImageForVision = async ({ filePath, buffer }) => {
   // Stable PNG improves vision reliability (rotate handles phone photos).
-  return sharp(filePath, { failOnError: false })
+  const input = buffer || filePath;
+  return sharp(input, { failOnError: false })
     .rotate()
     .resize({ width: 2000, withoutEnlargement: false })
     .grayscale()
@@ -69,12 +70,12 @@ const ensureSummaryShape = (obj) => {
   return { patientName, doctorName, hospitalName, reason, medicines: cleaned };
 };
 
-async function analyzeWithGeminiVision({ filePath }) {
+async function analyzeWithGeminiVision({ filePath, buffer }) {
   const genAI = getGeminiClient();
   if (!genAI) return null;
 
   const requestId = crypto.randomBytes(6).toString('hex');
-  const pngBuffer = await preprocessImageForVision(filePath);
+  const pngBuffer = await preprocessImageForVision({ filePath, buffer });
 
   // Not-premium / best value. Use a model that exists for your key and supports vision.
   // Your key supports: models/gemini-2.5-flash (recommended) and models/gemini-2.5-flash-image.

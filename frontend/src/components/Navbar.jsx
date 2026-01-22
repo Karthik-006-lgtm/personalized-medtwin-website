@@ -8,7 +8,7 @@ import {
   User, 
   LogOut, 
   ChevronDown,
-  Activity,
+  Stethoscope,
   Droplets,
   Pencil,
   Menu,
@@ -33,6 +33,26 @@ const Navbar = () => {
     setShowMobileMenu(false);
   };
 
+  const handleLogoClick = (e) => {
+    // Custom behavior:
+    // - If already on Dashboard: refresh + ensure we start at top.
+    // - If on any other page: go to Dashboard and start at top.
+    e.preventDefault();
+    closeMenus();
+
+    const isOnDashboard = location.pathname === '/dashboard' || location.pathname === '/';
+
+    if (isOnDashboard) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      window.location.reload();
+      return;
+    }
+
+    navigate('/dashboard');
+    // React Router doesn't automatically reset scroll; force it.
+    setTimeout(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }), 0);
+  };
+
   const navItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { path: '/documents', icon: FileText, label: 'Medical Documents' },
@@ -43,9 +63,14 @@ const Navbar = () => {
       <div className="container mx-auto px-4 max-w-7xl">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/dashboard" className="flex items-center gap-2 font-bold text-xl text-primary-600">
-            <Activity className="w-8 h-8" />
-            <span>HealthMonitor</span>
+          <Link
+            to="/dashboard"
+            onClick={handleLogoClick}
+            className="flex items-center gap-2 font-bold text-xl text-primary-600"
+            aria-label="Med Twin"
+          >
+            <Stethoscope className="w-8 h-8" />
+            <span>Med Twin</span>
           </Link>
 
           {/* Mobile Actions */}

@@ -58,7 +58,7 @@ const SignUp = () => {
         <div className="text-center mb-8 animate-fadeIn">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Activity className="w-12 h-12 text-primary-600" />
-            <h1 className="text-3xl font-bold text-gray-800">HealthMonitor</h1>
+            <h1 className="text-3xl font-bold text-gray-800">Med Twin</h1>
           </div>
           <p className="text-gray-600">Start Your Health Journey Today</p>
         </div>

@@ -11,6 +11,7 @@ const healthRoutes = require('./routes/health');
 const documentRoutes = require('./routes/documents');
 const predictionRoutes = require('./routes/predictions');
 const deviceRoutes = require('./routes/devices');
+const chatbotRoutes = require('./routes/chatbot');
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.use('/api/health', healthRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/predictions', predictionRoutes);
 app.use('/api/devices', deviceRoutes);
+app.use('/api/chatbot', chatbotRoutes);
 
 // Health check
 app.get('/api/health-check', (req, res) => {
