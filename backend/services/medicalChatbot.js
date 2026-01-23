@@ -300,16 +300,32 @@ const buildAnswer = async ({ question, normalizedQuestion, sources, messages }) 
     };
   }
 
-  const modelName = process.env.GEMINI_TEXT_MODEL || 'models/gemini-2.5-flash';
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-      // ChatGPT-like: clear, stable, not overly random.
-      temperature: 0.35,
-      topP: 0.9,
-      maxOutputTokens: 1400
-    }
-  });
+  const primaryModelName = process.env.GEMINI_TEXT_MODEL || 'models/gemini-2.5-flash';
+  const fallbackModels = String(process.env.GEMINI_TEXT_MODEL_FALLBACKS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const candidateModels = [primaryModelName, ...fallbackModels].slice(0, 4);
+
+  const generationConfig = {
+    // ChatGPT-like: clear, stable, not overly random.
+    temperature: 0.35,
+    topP: 0.9,
+    maxOutputTokens: 1400
+  };
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const extractRetryMs = (msg) => {
+    const text = String(msg || '');
+    // Matches: "Please retry in 23.036s" or retryDelay":"23s"
+    const m1 = text.match(/retry in\s+([0-9.]+)s/i);
+    if (m1) return Math.round(Number(m1[1]) * 1000);
+    const m2 = text.match(/retryDelay\":\"([0-9.]+)s/i);
+    if (m2) return Math.round(Number(m2[1]) * 1000);
+    return null;
+  };
 
   const sourcesText = (sources || [])
     .slice(0, 6)
@@ -378,13 +394,54 @@ const buildAnswer = async ({ question, normalizedQuestion, sources, messages }) 
     '- Ask up to 2 short questions ONLY if it changes the advice.'
   ].join('\n');
 
-  const result = await model.generateContent([{ text: prompt }]);
-  const text = result?.response?.text?.() || '';
+  let text = '';
+  let usedModel = primaryModelName;
+  let lastErr = null;
+
+  // Try primary model first; if rate-limited, optionally retry once (small delay) and/or fall back to other models.
+  for (const mName of candidateModels) {
+    usedModel = mName;
+    const model = genAI.getGenerativeModel({ model: mName, generationConfig });
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await model.generateContent([{ text: prompt }]);
+      text = result?.response?.text?.() || '';
+      if (text) break;
+    } catch (e) {
+      lastErr = e;
+      const msg = String(e?.message || '');
+      const isRateLimit = msg.includes('429') || msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('rate');
+      if (isRateLimit) {
+        const retryMs = extractRetryMs(msg);
+        // Only retry once if the suggested delay is short (keeps UX snappy).
+        if (retryMs && retryMs <= 5000) {
+          // eslint-disable-next-line no-await-in-loop
+          await sleep(retryMs);
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const result2 = await model.generateContent([{ text: prompt }]);
+            text = result2?.response?.text?.() || '';
+            if (text) break;
+          } catch (e2) {
+            lastErr = e2;
+          }
+        }
+        // move on to next model fallback
+        continue;
+      }
+      // non-rate-limit error -> don't spin on fallbacks
+      break;
+    }
+  }
+
+  if (!text && lastErr) {
+    throw lastErr;
+  }
 
   return {
     answer: stripUrlsFromText(text) || 'Sorry, I could not generate a response.',
     citations: (sources || []).slice(0, 6),
-    meta: { model: modelName, used: 'gemini_text' }
+    meta: { model: usedModel, used: 'gemini_text' }
   };
 };
 
