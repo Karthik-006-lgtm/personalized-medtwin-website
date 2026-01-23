@@ -35,6 +35,16 @@ const stripCodeFences = (text) => {
   return fenced ? fenced[1].trim() : trimmed;
 };
 
+const stripUrlsFromText = (text) => {
+  const t = String(text || '');
+  // Remove obvious URLs so the bot never shows referral links in the answer.
+  return t
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/\s+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
 const normalizeMessages = (messages) => {
   const arr = Array.isArray(messages) ? messages : [];
   return arr
@@ -69,12 +79,58 @@ const heuristicMedical = (q) => {
   return medicalSignals.some((s) => text.includes(s));
 };
 
+const estimateSensitivity = (q) => {
+  const text = String(q || '').toLowerCase();
+  if (!text.trim()) return 100;
+
+  // Self-harm / suicide: treat as highest sensitivity and respond with urgent guidance.
+  const selfHarm = ['suicide', 'kill myself', 'end my life', 'self harm', 'self-harm'];
+  if (selfHarm.some((s) => text.includes(s))) return 100;
+
+  // Privacy/illegal handled elsewhere; default moderate.
+  return 50;
+};
+
+const buildSearchQueries = (question) => {
+  const q = String(question || '').trim();
+  if (!q) return [];
+
+  const stop = new Set([
+    'i', 'me', 'my', 'mine', 'you', 'your', 'yours', 'a', 'an', 'the', 'and', 'or',
+    'to', 'of', 'in', 'on', 'for', 'with', 'is', 'are', 'was', 'were', 'be', 'been',
+    'do', 'does', 'did', 'what', 'why', 'how', 'when', 'where', 'pls', 'please'
+  ]);
+
+  const tokens = q
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t && t.length >= 3 && !stop.has(t));
+
+  const unique = [];
+  for (const t of tokens) {
+    if (!unique.includes(t)) unique.push(t);
+    if (unique.length >= 8) break;
+  }
+
+  const keywordQuery = unique.length ? unique.join(' ') : q;
+  return [q, keywordQuery].filter(Boolean).slice(0, 2);
+};
+
 const classifyWithGemini = async ({ question, messages }) => {
   const genAI = getGeminiClient();
   if (!genAI) return null;
 
   const modelName = process.env.GEMINI_TEXT_MODEL || 'models/gemini-2.5-flash';
-  const model = genAI.getGenerativeModel({ model: modelName });
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      temperature: 0.2,
+      topP: 0.9,
+      maxOutputTokens: 500
+    }
+  });
 
   // User preference: allow ~95% of normal personal medical questions.
   // Only refuse if: non-medical OR high sensitivity (>=95) privacy/illegal/extreme.
@@ -245,7 +301,15 @@ const buildAnswer = async ({ question, normalizedQuestion, sources, messages }) 
   }
 
   const modelName = process.env.GEMINI_TEXT_MODEL || 'models/gemini-2.5-flash';
-  const model = genAI.getGenerativeModel({ model: modelName });
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      // ChatGPT-like: clear, stable, not overly random.
+      temperature: 0.35,
+      topP: 0.9,
+      maxOutputTokens: 1400
+    }
+  });
 
   const sourcesText = (sources || [])
     .slice(0, 6)
@@ -262,7 +326,8 @@ const buildAnswer = async ({ question, normalizedQuestion, sources, messages }) 
     .join('\n\n');
 
   const prompt = [
-    'You are "Med Twin", a ChatGPT-like medical & biology assistant.',
+    'You are "Med Twin", a friendly personal wellbeing assistant for a patient (ChatGPT-like).',
+    'Your tone: warm, calm, supportive, and easy to understand. Use simple English.',
     'Scope & safety rules (must follow):',
     '- Answer ONLY medical, health, or biology questions. If not, refuse briefly.',
     '- Personal health questions are allowed. Be cautious and avoid definitive diagnosis.',
@@ -286,21 +351,38 @@ const buildAnswer = async ({ question, normalizedQuestion, sources, messages }) 
     'Retrieved sources:',
     sourcesText || '(none)',
     '',
-    'Write the answer like ChatGPT (clear and helpful):',
-    '- Start with: "Here’s what I understood:" + 1 sentence.',
-    '- Then sections (keep concise):',
-    '  1) What it could mean (common causes, not a diagnosis)',
-    '  2) What you can do now (safe self-care steps)',
-    '  3) When to see a doctor urgently (red flags)',
-    '  4) 1–2 questions for you (only if needed)',
-    '- End with sources URLs (max 4).',
+    'Output rules (must follow):',
+    '- Do NOT include any URLs/links or a "Sources" section in the final answer.',
+    '- Do NOT mention you used web search or citations.',
+    '- Be smooth and natural like ChatGPT.',
+    '- Make formatting clean and easy to read (short paragraphs, bullets, and clear spacing).',
+    '- Do NOT use markdown (no **bold**, no code fences). Plain text only.',
+    '- IMPORTANT: You must include ALL sections listed below. Do not stop early.',
+    '',
+    'Answer format (plain text):',
+    'Opening: 1 friendly line.',
+    '',
+    'What I understood:',
+    '- 1 sentence in simple English.',
+    '',
+    'Possible reasons (not a diagnosis):',
+    '- 3–6 bullets (most common first).',
+    '',
+    'What you can do now:',
+    '- 4–8 bullets (safe, practical, low-cost).',
+    '',
+    'Red flags (get urgent care):',
+    '- bullets (only if relevant).',
+    '',
+    'Quick questions for you (optional):',
+    '- Ask up to 2 short questions ONLY if it changes the advice.'
   ].join('\n');
 
   const result = await model.generateContent([{ text: prompt }]);
   const text = result?.response?.text?.() || '';
 
   return {
-    answer: text.trim() || 'Sorry, I could not generate a response.',
+    answer: stripUrlsFromText(text) || 'Sorry, I could not generate a response.',
     citations: (sources || []).slice(0, 6),
     meta: { model: modelName, used: 'gemini_text' }
   };
@@ -316,12 +398,10 @@ async function answerMedicalQuestion({ question, messages }) {
     };
   }
 
-  // Classify with Gemini (preferred). Fallback to heuristics.
-  const classification = await classifyWithGemini({ question, messages });
-  const medicalRelated = classification ? classification.medicalRelated : heuristicMedical(question);
-  const sensitivity = classification ? classification.sensitivity : 50;
-  const category = classification ? classification.category : (medicalRelated ? 'medical' : 'non_medical');
-  const safeToAnswer = classification ? classification.safeToAnswer : medicalRelated;
+  // IMPORTANT (reliability + cost): avoid a separate Gemini classification call.
+  // We do ONE Gemini call for the actual answer; everything else uses heuristics.
+  const medicalRelated = heuristicMedical(question);
+  const sensitivity = estimateSensitivity(question);
 
   if (!medicalRelated) {
     return {
@@ -332,47 +412,48 @@ async function answerMedicalQuestion({ question, messages }) {
     };
   }
 
-  if (!safeToAnswer || sensitivity >= 95 || category === 'privacy_violation' || category === 'illegal') {
+  if (sensitivity >= 95) {
     return {
       refused: true,
       reason: 'too_sensitive',
       answer:
-        'I can’t help with that specific request because it’s too sensitive or could violate privacy/safety. If you share a general medical question without identifiers, I can help.'
+        'I can’t help with that specific request because it’s very sensitive. If you share a general medical question (without identifiers), I can help.'
     };
   }
 
   // Live retrieval
-  const normalizedQuestion = (classification?.normalizedQuestion || '').trim() || '';
-  const candidateQueries = [
-    ...(classification?.searchQueries || []),
-    normalizedQuestion,
-    question
-  ]
-    .map((q) => String(q || '').trim())
-    .filter(Boolean)
-    .slice(0, 8);
+  const normalizedQuestion = '';
+  const candidateQueries = buildSearchQueries(question);
 
   let sources = [];
-  // Prefer Europe PMC first (abstracts improve answer quality).
-  for (const q of candidateQueries) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      sources = await europePmcSearch(q);
-    } catch (e) {
-      sources = [];
+  // Prefer Europe PMC first (abstracts improve answer quality). Do first 2 in parallel for speed.
+  try {
+    const attempts = candidateQueries.slice(0, 2).map((q) => europePmcSearch(q));
+    const settled = await Promise.allSettled(attempts);
+    for (const s of settled) {
+      if (s.status === 'fulfilled' && Array.isArray(s.value) && s.value.length) {
+        sources = s.value;
+        break;
+      }
     }
-    if (sources.length) break;
+  } catch {
+    sources = [];
   }
 
   // Fallback: PubMed titles if Europe PMC returns nothing.
-  for (const q of candidateQueries) {
+  if (!sources.length) {
     try {
-      // eslint-disable-next-line no-await-in-loop
-      sources = await pubmedSearch(q);
-    } catch (e) {
+      const attempts = candidateQueries.slice(0, 2).map((q) => pubmedSearch(q));
+      const settled = await Promise.allSettled(attempts);
+      for (const s of settled) {
+        if (s.status === 'fulfilled' && Array.isArray(s.value) && s.value.length) {
+          sources = s.value;
+          break;
+        }
+      }
+    } catch {
       sources = [];
     }
-    if (sources.length) break;
   }
   if (!sources.length) {
     for (const q of candidateQueries) {
@@ -382,13 +463,33 @@ async function answerMedicalQuestion({ question, messages }) {
     }
   }
 
-  const built = await buildAnswer({ question, normalizedQuestion, sources, messages });
-  return {
-    refused: false,
-    sensitivity,
-    normalizedQuestion: normalizedQuestion || undefined,
-    ...built
-  };
+  try {
+    const built = await buildAnswer({ question, normalizedQuestion, sources, messages });
+    return {
+      refused: false,
+      sensitivity,
+      normalizedQuestion: undefined,
+      ...built
+    };
+  } catch (e) {
+    const msg = String(e?.message || '');
+    const isRateLimit = msg.includes('429') || msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('rate');
+    if (isRateLimit) {
+      return {
+        refused: false,
+        sensitivity,
+        answer:
+          'I’m temporarily busy (rate limit). Please try again in about 30 seconds. If this keeps happening, your Gemini free-tier quota may be exhausted for today.',
+        meta: { used: 'fallback_rate_limit' }
+      };
+    }
+    return {
+      refused: false,
+      sensitivity,
+      answer: 'I had trouble generating a response right now. Please try again in a moment.',
+      meta: { used: 'fallback_error' }
+    };
+  }
 }
 
 module.exports = {
