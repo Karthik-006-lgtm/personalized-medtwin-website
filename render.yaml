@@ -1,5 +1,17 @@
 services:
-  # Backend API
+  # Frontend Service
+  - type: web
+    name: medtwin-frontend
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npm run preview
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+  # Backend Service
   - type: web
     name: medtwin-backend
     env: node
@@ -12,11 +24,8 @@ services:
         value: production
       - key: PORT
         value: 5000
-      - key: JWT_SECRET
-        generateValue: true
       - key: MONGODB_URI
         sync: false
-    healthCheckPath: /api/health-check
 
   # ML Service
   - type: web
@@ -29,4 +38,3 @@ services:
     envVars:
       - key: PORT
         value: 5001
-    healthCheckPath: /api/health-check
