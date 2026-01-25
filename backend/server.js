@@ -57,7 +57,10 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/health-mo
 .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
 const PORT = process.env.PORT || 5000;
+const HOST = '0.0.0.0'; // Listen on all network interfaces
 
-app.listen(PORT, () => {
-  console.log(`🚀 Backend Server running on http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 Backend Server running on:`);
+  console.log(`   - Local: http://localhost:${PORT}`);
+  console.log(`   - Network: http://192.168.1.8:${PORT}`);
 });
