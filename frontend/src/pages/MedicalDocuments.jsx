@@ -151,8 +151,7 @@ const MedicalDocuments = () => {
         {
           role: 'bot',
           content: data.answer || 'Sorry, I could not generate a response.',
-          refused: !!data.refused,
-          citations: Array.isArray(data.citations) ? data.citations : []
+          refused: !!data.refused
         }
       ]);
     } catch (error) {
@@ -530,25 +529,6 @@ const MedicalDocuments = () => {
                     }`}
                   >
                     {m.content}
-                    {m.role !== 'user' && Array.isArray(m.citations) && m.citations.length > 0 && (
-                      <div className="mt-3 text-xs">
-                        <div className="font-semibold text-gray-600 mb-1">Sources</div>
-                        <ul className="list-disc pl-5 space-y-1">
-                          {m.citations.slice(0, 4).map((c, cIdx) => (
-                            <li key={cIdx} className="text-gray-600">
-                              <a
-                                href={c.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="underline hover:text-primary-700"
-                              >
-                                {c.title || c.url}
-                              </a>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
                   </div>
                 </div>
               ))}

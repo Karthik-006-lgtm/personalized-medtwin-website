@@ -4,6 +4,21 @@ const { answerMedicalQuestion } = require('../services/medicalChatbot');
 
 const router = express.Router();
 
+// Debug helper (does NOT reveal the key). Useful to verify the running server loaded backend/.env.
+router.get('/debug-env', auth, (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  const key = String(process.env.GEMINI_API_KEY || '');
+  return res.json({
+    geminiKeyPresent: !!key,
+    geminiKeyLength: key.length,
+    geminiKeyStartsWithAIza: key.startsWith('AIza'),
+    geminiTextModel: process.env.GEMINI_TEXT_MODEL || null,
+    geminiTextModelFallbacks: process.env.GEMINI_TEXT_MODEL_FALLBACKS || ''
+  });
+});
+
 // Medical chatbot: retrieval + Gemini summarization
 router.post('/ask', auth, async (req, res) => {
   try {

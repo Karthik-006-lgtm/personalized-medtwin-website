@@ -3,7 +3,10 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
-require('dotenv').config();
+// Ensure we always load backend/.env (even if the server is started from the repo root),
+// and override any machine-wide env vars (prevents stale keys).
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env'), override: true });
 
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');

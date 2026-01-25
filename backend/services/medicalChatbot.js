@@ -306,7 +306,19 @@ const buildAnswer = async ({ question, normalizedQuestion, sources, messages }) 
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const candidateModels = [primaryModelName, ...fallbackModels].slice(0, 4);
+  // If the user didn't configure fallbacks, use a sensible built-in order.
+  // (Different Gemini accounts expose different models; we attempt and skip "not found".)
+  const builtInFallbacks = [
+    'models/gemini-2.0-flash-lite',
+    'models/gemini-2.0-flash',
+    'models/gemini-1.5-flash'
+  ];
+
+  const candidateModels = [primaryModelName, ...fallbackModels, ...builtInFallbacks]
+    .map((m) => String(m || '').trim())
+    .filter(Boolean)
+    .filter((m, idx, arr) => arr.indexOf(m) === idx)
+    .slice(0, 6);
 
   const generationConfig = {
     // ChatGPT-like: clear, stable, not overly random.
@@ -411,6 +423,7 @@ const buildAnswer = async ({ question, normalizedQuestion, sources, messages }) 
       lastErr = e;
       const msg = String(e?.message || '');
       const isRateLimit = msg.includes('429') || msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('rate');
+      const isNotFound = msg.includes('404') || msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('model');
       if (isRateLimit) {
         const retryMs = extractRetryMs(msg);
         // Only retry once if the suggested delay is short (keeps UX snappy).
@@ -427,6 +440,10 @@ const buildAnswer = async ({ question, normalizedQuestion, sources, messages }) 
           }
         }
         // move on to next model fallback
+        continue;
+      }
+      if (isNotFound) {
+        // model not available for this key/account -> try next fallback
         continue;
       }
       // non-rate-limit error -> don't spin on fallbacks
@@ -530,7 +547,18 @@ async function answerMedicalQuestion({ question, messages }) {
     };
   } catch (e) {
     const msg = String(e?.message || '');
-    const isRateLimit = msg.includes('429') || msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('rate');
+    const isInvalidKey = msg.toLowerCase().includes('api_key_invalid') || msg.toLowerCase().includes('api key not valid');
+    const lower = msg.toLowerCase();
+    const isRateLimit = msg.includes('429') || lower.includes('quota exceeded') || lower.includes('rate limit') || lower.includes('rate-limits');
+    if (isInvalidKey) {
+      return {
+        refused: false,
+        sensitivity,
+        answer:
+          'Chatbot is not configured correctly right now (Gemini API key is invalid). Please re-check `backend/.env` GEMINI_API_KEY, then restart the backend.',
+        meta: { used: 'fallback_invalid_key' }
+      };
+    }
     if (isRateLimit) {
       return {
         refused: false,
