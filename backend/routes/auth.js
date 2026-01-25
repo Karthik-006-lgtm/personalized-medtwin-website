@@ -18,8 +18,11 @@ router.post('/signup', [
   })
 ], async (req, res) => {
   try {
+    console.log('Signup request received:', { email: req.body.email });
+    
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('Validation errors:', errors.array());
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -28,12 +31,14 @@ router.post('/signup', [
     // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
+      console.log('User already exists:', email);
       return res.status(400).json({ error: 'Email already registered' });
     }
 
     // Create user
     const user = new User({ email, password });
     await user.save();
+    console.log('User created successfully:', email);
 
     // Generate token
     const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '7d' });
@@ -47,6 +52,7 @@ router.post('/signup', [
       }
     });
   } catch (error) {
+    console.error('Signup error:', error);
     res.status(500).json({ error: error.message });
   }
 });

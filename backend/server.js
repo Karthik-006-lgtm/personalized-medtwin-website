@@ -42,6 +42,12 @@ app.get('/api/health-check', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// Test endpoint
+app.post('/api/test', (req, res) => {
+  console.log('Test endpoint hit:', req.body);
+  res.json({ message: 'Test successful', received: req.body });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);

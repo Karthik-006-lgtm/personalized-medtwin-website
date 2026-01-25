@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Connection</title>
+</head>
+<body>
+    <h1>Test Backend Connection</h1>
+    <button onclick="testSignup()">Test Signup</button>
+    <div id="result"></div>
+
+    <script>
+        async function testSignup() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing...';
+            
+            try {
+                const response = await fetch('http://192.168.1.8:5000/api/auth/signup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'test' + Date.now() + '@test.com',
+                        password: 'test123',
+                        confirmPassword: 'test123'
+                    })
+                });
+                
+                const data = await response.json();
+                resultDiv.innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                resultDiv.style.color = response.ok ? 'green' : 'red';
+            } catch (error) {
+                resultDiv.innerHTML = 'Error: ' + error.message;
+                resultDiv.style.color = 'red';
+            }
+        }
+    </script>
+</body>
+</html>
