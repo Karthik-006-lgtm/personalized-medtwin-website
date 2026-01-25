@@ -9,7 +9,28 @@ Your computer must be running:
 - ✅ Frontend (Port 5173)
 - ✅ MongoDB
 
-### Step 2: Find Your Computer's IP Address
+### Step 2: Configure Network Mode
+
+The frontend needs to know your computer's IP address. Run this script:
+```bash
+SWITCH_MODE.bat
+```
+Choose option **2** for Network Mode.
+
+Or manually copy the network config:
+```bash
+copy frontend\.env.network frontend\.env
+```
+
+### Step 3: Restart Frontend
+
+After switching to network mode, restart the frontend:
+```bash
+cd frontend
+npm run dev
+```
+
+### Step 4: Find Your Computer's IP Address
 Your local IP address is: **192.168.1.8**
 
 To verify or find it again:
@@ -17,7 +38,7 @@ To verify or find it again:
 ipconfig | findstr IPv4
 ```
 
-### Step 3: Access from Your Phone
+### Step 5: Access from Your Phone
 
 **Make sure your phone is on the SAME WiFi network as your computer!**
 
@@ -26,12 +47,14 @@ Open your phone's browser and go to:
 http://192.168.1.8:5173
 ```
 
-### Step 4: Share with Friends
+### Step 6: Share with Friends
 
 Your friends can access it too if they're on the same WiFi network:
 ```
 http://192.168.1.8:5173
 ```
+
+**Note:** The signup and login will now work correctly because the frontend is configured to use your network IP!
 
 ---
 
